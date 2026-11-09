@@ -65,7 +65,7 @@ fun EditorScreen() {
         }
         OutlinedTextField(fileName, { fileName = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("Export file name") }, singleLine = true)
         Text("$origin · ${if (saved) "Draft saved locally" else "Saving draft…"}", style = MaterialTheme.typography.bodySmall)
-        Text("${statistics.words} words · ${statistics.lines} lines · ${statistics.characters} characters", style = MaterialTheme.typography.bodySmall)
+        Text("${statistics.words} words · ${statistics.lines} lines · ${statistics.characters} characters · ~${readingTimeMinutes(statistics.words)} min read", style = MaterialTheme.typography.bodySmall)
         OperationStatus(op)
         OutlinedTextField(text, { if (it.length <= 1_000_000) text = it else op.notice("Draft limit is 1,000,000 characters. Export and start another draft.") }, Modifier.fillMaxWidth().weight(1f), label = { Text("Plain text / Markdown") })
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

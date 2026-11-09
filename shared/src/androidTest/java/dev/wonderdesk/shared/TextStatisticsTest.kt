@@ -16,4 +16,11 @@ class TextStatisticsTest {
         assertEquals(0, countTextMatches("abc", "abcd"))
         assertEquals(4, countTextMatches("aaaaa", "aa"))
     }
+    @Test fun readingTimeRoundsUpAtTwoHundredWordsPerMinute() {
+        assertEquals(0, readingTimeMinutes(0))
+        assertEquals(0, readingTimeMinutes(-5))
+        assertEquals(1, readingTimeMinutes(1))
+        assertEquals(1, readingTimeMinutes(200))
+        assertEquals(2, readingTimeMinutes(201))
+    }
 }

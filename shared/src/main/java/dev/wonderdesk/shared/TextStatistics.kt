@@ -14,6 +14,9 @@ fun textStatistics(text: String): TextStatistics {
     return TextStatistics(text.codePointCount(0, text.length), words, lines)
 }
 
+/** Rough reading-time estimate at 200 words per minute, rounded up; empty text reads "0 min". */
+fun readingTimeMinutes(words: Int): Int = if (words <= 0) 0 else (words + 199) / 200
+
 /** Count overlapping matches without allocating a substring for every position. */
 fun countTextMatches(text: String, query: String): Int {
     if (query.isEmpty()) return 0
