@@ -1,6 +1,6 @@
 # Scribble for Android
 
-Plain text notes with one auto saved draft. By Rednave.
+Plain text notes with one auto saved draft.
 
 ## Easiest install and updates
 
