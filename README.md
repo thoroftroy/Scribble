@@ -9,6 +9,7 @@ Notes, lists and sketches, kept as real files.
 - Checklists continue as you press Enter. Pin notes, give them paper colours, search everything, find and replace, and undo/redo.
 - **Sketches**: pen, line, box and oval tools, colours, sizes, an eraser, and plain, lined or grid paper. Saved as PNG files.
 - Import and export text files, a home-screen notepad widget, and a recycle bin that keeps notes for 30 days.
+- **Every document on your phone:** with all files access, *On this phone* lists every text and Markdown file, and your edits save straight into the original file.
 
 ## Install and update
 

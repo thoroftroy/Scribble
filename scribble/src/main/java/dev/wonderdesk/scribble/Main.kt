@@ -88,7 +88,15 @@ fun ScribbleApp() {
     var sortRecent by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("sortRecent", true)) }
     val scope = rememberCoroutineScope()
     var loaded by remember { mutableStateOf(false) }
+    val externals = remember { mutableStateListOf<Note>() }
     fun upsert(n: Note) {
+        if (n.external.isNotEmpty()) {
+            // A document from elsewhere on the phone: save straight back to its own file.
+            val i = externals.indexOfFirst { it.id == n.id }
+            if (i >= 0) externals[i] = n else externals.add(n)
+            scope.launch(Dispatchers.IO) { runCatching { Documents.save(n) } }
+            return
+        }
         val i = notes.indexOfFirst { it.id == n.id }
         if (i >= 0) notes[i] = n else notes.add(0, n)
         scope.launch(Dispatchers.IO) { store.save(n); NotepadWidget.refresh(context) }
@@ -120,7 +128,12 @@ fun ScribbleApp() {
         if (intent?.getBooleanExtra("new", false) == true) newNote()
         when (intent?.action) {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { newNote(it.take(1_000_000), intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()) }
-            Intent.ACTION_VIEW -> intent.data?.let { uri -> runCatching { readText(context, uri) }.onSuccess { (t, name) -> newNote(t, name) }.onFailure { toast.value(it.message ?: "Couldn't open that file") } }
+            Intent.ACTION_VIEW -> intent.data?.let { uri ->
+                // With all-files access, edit the real file in place; otherwise bring a copy in as a note.
+                val doc = if (Documents.canEditAll()) Documents.uriToPath(context, uri)?.let { Documents.open(it) } else null
+                if (doc != null) { externals.removeAll { it.id == doc.id }; externals.add(doc); openId = doc.id }
+                else runCatching { readText(context, uri) }.onSuccess { (t, name) -> newNote(t, name) }.onFailure { toast.value(it.message ?: "Couldn't open that file") }
+            }
         }
     }
     val importer = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
@@ -130,19 +143,25 @@ fun ScribbleApp() {
                 .onFailure { toast.value(it.message ?: "Couldn't read that file") }
         }
     }
-    val open = openId?.let { id -> notes.find { it.id == id } }
+    val open = openId?.let { id -> notes.find { it.id == id } ?: externals.find { it.id == id } }
     if (open != null) {
         if (open.sketch) SketchEditor(open, store, onChangeLocal = { n -> val i = notes.indexOfFirst { it.id == n.id }; if (i >= 0) notes[i] = n }, onClose = { openId = null }, onDelete = { upsert(open.copy(trashed = System.currentTimeMillis())); openId = null })
         else NoteEditor(open, folders, notes, onOpenLink = { t ->
             val target = notes.firstOrNull { it.trashed == 0L && it.displayTitle.equals(t, true) }
             if (target != null) openId = target.id else newNote(title = t)
         }, onChange = ::upsert, onClose = {
-            if (open.title.isBlank() && open.body.isBlank()) { notes.remove(open); scope.launch(Dispatchers.IO) { store.deleteForever(open) } }
+            if (open.external.isEmpty() && open.title.isBlank() && open.body.isBlank()) { notes.remove(open); scope.launch(Dispatchers.IO) { store.deleteForever(open) } }
             openId = null
-        }, onDelete = { upsert(open.copy(trashed = System.currentTimeMillis())); openId = null }, onNewFolder = { f -> folders = (folders + f).distinct(); store.saveFolders(folders) })
+        }, onDelete = {
+            if (open.external.isNotEmpty()) { toast.value("This file lives in ${java.io.File(open.external).parentFile?.name}. Delete it in Wayfinder."); openId = null }
+            else { upsert(open.copy(trashed = System.currentTimeMillis())); openId = null }
+        }, onNewFolder = { f -> folders = (folders + f).distinct(); store.saveFolders(folders) })
         return
     }
     var newFolder by remember { mutableStateOf(false) }
+    var allFilesGuide by remember { mutableStateOf(false) }
+    if (allFilesGuide) AccessGuide(SpecialAccess.Kind.ALL_FILES, "Scribble uses it to find text and Markdown documents anywhere on your phone and to save edits back into them. Nothing leaves your phone.",
+        onDismiss = { allFilesGuide = false }, onGranted = { filter = "device" })
     var confirmEmpty by remember { mutableStateOf(false) }
     fun reloadFrom(tree: android.net.Uri?) {
         loaded = false
@@ -157,7 +176,7 @@ fun ScribbleApp() {
     }
     WonderApp(
         appName = "Scribble", about = ABOUT,
-        title = when { filter == "pinned" -> "Pinned"; filter == "trash" -> "Trash"; filter.startsWith("folder:") -> filter.removePrefix("folder:"); else -> "Scribble" },
+        title = when { filter == "pinned" -> "Pinned"; filter == "device" -> "On this phone"; filter == "trash" -> "Trash"; filter.startsWith("folder:") -> filter.removePrefix("folder:"); else -> "Scribble" },
         actions = {
             if (filter != "trash") {
                 ToolbarButton(WonderIcons.Brush, "New sketch", { newNote(sketch = true) })
@@ -166,10 +185,13 @@ fun ScribbleApp() {
         },
         settings = {
             Panel(title = "Notes folder", footer = "Notes are plain Markdown and text files. Pick any folder, such as an Obsidian vault or Documents/Notes, to keep them where other apps and computers can open them.") {
-                ListRow(store.fs.label, subtitle = if (store.prefs.getString("tree", null) == null) "Private to Scribble" else "Shared folder", icon = WonderIcons.Folder, tint = Color(0xFF4A90E2))
+                ListRow(store.fs.label, subtitle = if (!store.usesSharedFolder) "Private to Scribble" else if (store.prefs.getString("path", null) != null && Documents.canEditAll()) "Shared folder · fast direct access" else "Shared folder", icon = WonderIcons.Folder, tint = Color(0xFF4A90E2))
                 PanelDivider()
                 ListRow("Choose a folder…", icon = WonderIcons.FolderOpen, tint = Color(0xFF2E9E44), chevron = true, onClick = { folderPicker.launch(null) })
-                if (store.prefs.getString("tree", null) != null) { PanelDivider(); ListRow("Go back to the private folder", icon = WonderIcons.Lock, tint = Color(0xFF7A7F87), onClick = { reloadFrom(null) }) }
+                if (store.usesSharedFolder) { PanelDivider(); ListRow("Go back to the private folder", icon = WonderIcons.Lock, tint = Color(0xFF7A7F87), onClick = { reloadFrom(null) }) }
+            }
+            Panel(title = "Documents on this phone", footer = "With all files access, Scribble lists every text and Markdown file on your phone and saves your edits straight into the original file.") {
+                SwitchRow("All files access", Documents.canEditAll(), { allFilesGuide = true }, icon = WonderIcons.Storage, tint = Color(0xFF16A085))
             }
             Panel(title = "Editor") {
                 var pv by remember { mutableStateOf(store.prefs.getBoolean("openInPreview", false)) }
@@ -207,12 +229,19 @@ fun ScribbleApp() {
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("All notes", filter == "all", { filter = "all" }, WonderIcons.Notes)
                     Chip("Pinned", filter == "pinned", { filter = "pinned" }, WonderIcons.PushPin)
+                    Chip("On this phone", filter == "device", { filter = "device" }, WonderIcons.PhoneAndroid)
                     folders.forEach { f -> Chip(f, filter == "folder:$f", { filter = "folder:$f" }, WonderIcons.Folder) }
                     Chip("New folder", false, { newFolder = true }, WonderIcons.Add)
                     Chip("Trash", filter == "trash", { filter = "trash" }, WonderIcons.Delete)
                 }
             }
-            if (!loaded) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.accent) }
+            if (filter == "device") DeviceDocuments(query, needAccess = { allFilesGuide = true }) { path ->
+                scope.launch {
+                    val doc = withContext(Dispatchers.IO) { Documents.open(path) }
+                    if (doc == null) toast.value("Couldn't open that file") else { externals.removeAll { it.id == doc.id }; externals.add(doc); openId = doc.id }
+                }
+            }
+            else if (!loaded) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.accent) }
             else if (shown.isEmpty()) EmptyState(
                 when { query.isNotBlank() -> "No matches"; filter == "trash" -> "Trash is empty"; filter == "pinned" -> "Nothing pinned"; else -> "No notes yet" },
                 when { query.isNotBlank() -> "No note contains “$query”."; filter == "trash" -> "Deleted notes stay here for 30 days."; filter == "pinned" -> "Pin a note from its toolbar to keep it on top."; else -> "Write a note, start a checklist or draw a sketch." },
@@ -621,4 +650,30 @@ private fun inline(s: String, p: WonderPalette): androidx.compose.ui.text.Annota
         last = m.range.last + 1
     }
     append(s.substring(last))
+}
+
+/** Every text document on the phone, searchable, opened in place. */
+@Composable
+private fun DeviceDocuments(query: String, needAccess: () -> Unit, onOpen: (String) -> Unit) {
+    val context = LocalContext.current
+    val p = wonderPalette()
+    val resumed = rememberIsResumed()
+    var docs by remember { mutableStateOf<List<Documents.Doc>?>(null) }
+    val access = remember(resumed) { Documents.canEditAll() }
+    LaunchedEffect(access, resumed) { if (access && resumed) docs = withContext(Dispatchers.IO) { Documents.list(context) } }
+    if (!access) { EmptyState("See every document on your phone", "Turn on all files access to browse and edit text and Markdown files anywhere on your phone, right where they are.",
+        icon = WonderIcons.Description, action = { WButton("Turn on all files access", needAccess, icon = WonderIcons.Storage, kind = ButtonKind.Primary) }); return }
+    val list = docs
+    if (list == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.accent) }; return }
+    val shown = remember(list, query) { if (query.isBlank()) list else list.filter { it.name.contains(query, true) || it.folder.contains(query, true) } }
+    if (shown.isEmpty()) { EmptyState(if (query.isBlank()) "No text documents found" else "No matches", if (query.isBlank()) "Text and Markdown files you save or download will show up here." else "No document name contains “$query”.", icon = WonderIcons.Description); return }
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+        item { Text("${shown.size} document${if (shown.size == 1) "" else "s"}", Modifier.padding(6.dp, 0.dp, 6.dp, 8.dp), style = MaterialTheme.typography.bodySmall, color = p.secondaryText) }
+        items(shown.size, key = { shown[it].path }) { i ->
+            val d = shown[i]
+            ListRow(d.name, Modifier.panelItem(i, shown.size), subtitle = "${d.folder} · ${formatBytes(d.size)} · ${relativeTime(d.modified)}",
+                icon = if (d.name.endsWith(".md") || d.name.endsWith(".markdown")) WonderIcons.Article else WonderIcons.TextSnippet,
+                tint = if (d.name.endsWith(".md") || d.name.endsWith(".markdown")) Color(0xFF8E44AD) else Color(0xFF7A7F87), onClick = { onOpen(d.path) })
+        }
+    }
 }

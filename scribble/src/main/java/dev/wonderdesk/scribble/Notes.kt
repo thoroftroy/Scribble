@@ -22,6 +22,8 @@ data class Note(
     val updated: Long = System.currentTimeMillis(),
     val trashed: Long = 0L,
     val ext: String = "md",
+    /** For a document opened from anywhere on the phone: its full path. Edits go straight to that file. */
+    val external: String = "",
 ) {
     val displayTitle: String get() = title.ifBlank { body.lineSequence().firstOrNull { it.isNotBlank() }?.trim()?.removePrefix("# ")?.removePrefix("☐ ")?.removePrefix("☑ ")?.take(60) ?: if (sketch) "Sketch" else "New note" }
     val preview: String get() = body.trim()
@@ -112,12 +114,21 @@ class NoteStore(private val context: Context) {
     var fs: Fs = openFs(); private set
     private var index = JSONObject()   // id -> {path, pinned, color, created, trashed, strokes}
 
-    private fun openFs(): Fs = prefs.getString("tree", null)?.let { t -> runCatching { SafFs(context, Uri.parse(t)) }.getOrNull() }
-        ?: FileFs(File(context.filesDir, "vault"), "On this phone")
+    private fun openFs(): Fs {
+        // With all-files access, a folder on the phone is read directly, which is far faster than through the picker.
+        prefs.getString("path", null)?.let { p -> val f = File(p); if (android.os.Environment.isExternalStorageManager() && f.isDirectory) return FileFs(f, f.name) }
+        return prefs.getString("tree", null)?.let { t -> runCatching { SafFs(context, Uri.parse(t)) }.getOrNull() }
+            ?: FileFs(File(context.filesDir, "vault"), "On this phone")
+    }
+
+    val usesSharedFolder get() = prefs.getString("tree", null) != null || prefs.getString("path", null) != null
 
     fun useFolder(tree: Uri?) {
-        prefs.edit().apply { if (tree == null) remove("tree") else putString("tree", tree.toString()) }.apply()
-        fs = openFs()
+        val path = tree?.let { Documents.treeToPath(it) }
+        prefs.edit().apply {
+            if (tree == null) { remove("tree"); remove("path") } else { putString("tree", tree.toString()); if (path != null) putString("path", path) else remove("path") }
+        }.apply()
+        fs = openFs(); indexLoaded = false
     }
 
     private fun loadIndex() { index = runCatching { JSONObject(String(fs.read(".scribble/index.json")!!)) }.getOrDefault(JSONObject()) }
@@ -276,4 +287,77 @@ fun continueList(old: String, new: String, cursor: Int): Pair<String, Int>? {
         else -> marker
     }
     return new.replaceRange(cursor, cursor, next) to cursor + next.length
+}
+
+/** Text documents anywhere on the phone (needs all-files access to edit them in place). */
+object Documents {
+    val EXT = setOf("md", "markdown", "txt", "text", "org", "csv", "log", "json", "xml", "yaml", "yml", "ini", "conf", "srt", "tex", "rst", "adoc")
+
+    data class Doc(val path: String, val name: String, val folder: String, val size: Long, val modified: Long)
+
+    fun canEditAll() = android.os.Environment.isExternalStorageManager()
+
+    /**
+     * Every text document on the phone, newest first. Android's media index rarely tracks text files,
+     * so this walks storage directly (skipping Android/, hidden and app-cache folders).
+     */
+    fun list(c: Context): List<Doc> {
+        val out = ArrayList<Doc>()
+        val roots = c.getSystemService(android.os.storage.StorageManager::class.java).storageVolumes.mapNotNull { it.directory }
+        fun walk(d: File, depth: Int) {
+            if (depth > 14 || out.size >= 5000) return
+            val kids = d.listFiles() ?: return
+            for (f in kids) {
+                val n = f.name
+                if (n.startsWith(".")) continue
+                if (f.isDirectory) { if (!(depth == 0 && n == "Android") && n != "node_modules" && n != "cache") walk(f, depth + 1) }
+                else if (n.substringAfterLast('.', "").lowercase() in EXT && f.length() < 4 * 1024 * 1024) out += Doc(f.path, n, d.name, f.length(), f.lastModified())
+            }
+        }
+        roots.forEach { walk(it, 0) }
+        return out.sortedByDescending { it.modified }
+    }
+
+    fun open(path: String): Note? {
+        val f = File(path)
+        if (!f.isFile || f.length() > 4 * 1024 * 1024) return null
+        val text = runCatching { f.readText() }.getOrNull()?.removePrefix("\uFEFF") ?: return null
+        return Note(id = "ext:" + path, title = f.nameWithoutExtension, body = text, folder = f.parentFile?.name ?: "", created = f.lastModified(), updated = f.lastModified(),
+            ext = f.extension.ifBlank { "txt" }, external = path)
+    }
+
+    /** Saves an opened document back to its file; renames it if the title changed. Returns the (possibly new) path. */
+    fun save(n: Note): String {
+        var f = File(n.external)
+        val wanted = n.title.replace(Regex("[\\\\/:*?\"<>|]"), " ").trim()
+        if (wanted.isNotEmpty() && wanted != f.nameWithoutExtension) {
+            val t = File(f.parentFile, wanted + "." + n.ext)
+            if (!t.exists() && f.renameTo(t)) f = t
+        }
+        val tmp = File(f.path + ".scribble-tmp")
+        tmp.writeText(n.body); if (!tmp.renameTo(f)) { f.writeText(n.body); tmp.delete() }
+        return f.path
+    }
+
+    /** content:// links from Wayfinder, the media store or "primary:" folder trees to a real path. */
+    fun uriToPath(c: Context, uri: Uri): String? {
+        if (uri.scheme == "file") return uri.path
+        val auth = uri.authority ?: return null
+        val segs = uri.pathSegments
+        if (auth.endsWith(".files") && segs.size >= 2) {
+            val rest = segs.drop(1).joinToString("/")
+            return when (segs[0]) { "storage" -> android.os.Environment.getExternalStorageDirectory().path + "/" + rest; "root" -> "/storage/" + rest; else -> null }
+        }
+        if (auth == "media") return runCatching { c.contentResolver.query(uri, arrayOf(android.provider.MediaStore.MediaColumns.DATA), null, null, null)?.use { if (it.moveToFirst()) it.getString(0) else null } }.getOrNull()
+        if (auth == "com.android.externalstorage.documents") return runCatching { android.provider.DocumentsContract.getDocumentId(uri) }.getOrNull()?.let { idToPath(it) }
+        return null
+    }
+
+    fun treeToPath(tree: Uri): String? = runCatching { android.provider.DocumentsContract.getTreeDocumentId(tree) }.getOrNull()?.let { idToPath(it) }
+
+    private fun idToPath(id: String): String? {
+        val vol = id.substringBefore(':'); val rel = id.substringAfter(':', "")
+        val base = if (vol == "primary") android.os.Environment.getExternalStorageDirectory().path else "/storage/$vol"
+        return if (rel.isEmpty()) base else "$base/$rel"
+    }
 }
