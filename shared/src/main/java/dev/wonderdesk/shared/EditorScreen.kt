@@ -2,16 +2,26 @@ package dev.wonderdesk.shared
 
 import android.content.Context
 import android.content.Intent
+import android.graphics.Bitmap
 import android.net.Uri
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
+import java.io.File
+import java.io.FileOutputStream
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
@@ -32,6 +42,7 @@ fun EditorScreen() {
     var replace by remember { mutableStateOf(false) }
     var find by remember { mutableStateOf("") }
     var replacement by remember { mutableStateOf("") }
+    var drawMode by remember { mutableStateOf(false) }
     val statistics = remember(text) { textStatistics(text) }
     val create = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { value ->
         if (value != null) {
@@ -57,11 +68,60 @@ fun EditorScreen() {
             text = shared.take(1_000_000); origin = "Shared text in local draft"
         } else pendingImport = intent.data
     }
+    if (drawMode) {
+        // Simple drawing pad, saved as PNG next to the text draft.
+        val drawBitmap = remember { mutableStateOf<Bitmap?>(null) }
+        val drawColor = remember { mutableStateOf(0xFF000000.toInt()) }
+        var last by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
+        Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                TextButton(onClick = { drawMode = false }) { Text("Back to text") }
+                listOf(0xFF000000.toInt(), 0xFFE53935.toInt(), 0xFF1E88E5.toInt(), 0xFF43A047.toInt()).forEach { color ->
+                    TextButton(onClick = { drawColor.value = color }) { Text(if (drawColor.value == color) "•" else "", color = androidx.compose.ui.graphics.Color(color)) }
+                }
+                TextButton(onClick = {
+                    val bitmap = drawBitmap.value ?: Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888)
+                    val file = File(context.filesDir, "scribble-drawing.png")
+                    FileOutputStream(file).use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+                    op.notice("Drawing saved inside the app. Export it with Share below.")
+                }) { Text("Save") }
+                TextButton(onClick = {
+                    val file = File(context.filesDir, "scribble-drawing.png")
+                    if (file.exists()) {
+                        val uri = androidx.core.content.FileProvider.getUriForFile(context, "${context.packageName}.files", file)
+                        context.share(uri, "image/png", op::notice)
+                    } else op.notice("Save the drawing first.")
+                }) { Text("Share") }
+            }
+            Canvas(Modifier.fillMaxWidth().weight(1f).background(androidx.compose.ui.graphics.Color.White)
+                .pointerInput(Unit) {
+                    detectDragGestures(onDragStart = { offset ->
+                        last = offset
+                    }, onDrag = { change, _ ->
+                        val bmp = drawBitmap.value
+                        val target = if (bmp == null || bmp.width != size.width.toInt() || bmp.height != size.height.toInt()) {
+                            val fresh = Bitmap.createBitmap(size.width.toInt().coerceAtLeast(1), size.height.toInt().coerceAtLeast(1), Bitmap.Config.ARGB_8888)
+                            fresh.eraseColor(android.graphics.Color.WHITE)
+                            drawBitmap.value = fresh
+                            fresh
+                        } else bmp
+                        val canvas = android.graphics.Canvas(target)
+                        val paint = android.graphics.Paint().apply { color = drawColor.value; strokeWidth = 12f; isAntiAlias = true; style = android.graphics.Paint.Style.STROKE; strokeCap = android.graphics.Paint.Cap.ROUND }
+                        canvas.drawLine(last.x, last.y, change.position.x, change.position.y, paint)
+                        last = change.position
+                    })
+                }) {
+                drawBitmap.value?.let { drawImage(it.asImageBitmap()) }
+            }
+        }
+        return
+    }
     Column(Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             AquaButton(onClick = { open.launch(arrayOf("text/*", "application/json", "application/xml")) }, enabled = !op.busy) { Text("Import file") }
             AquaSecondaryButton(onClick = { pendingExport = text; create.launch(fileName.ifBlank { "Note.txt" }) }, enabled = !op.busy) { Text("Export copy") }
             TextButton(onClick = { replace = true }, enabled = !op.busy) { Text("Find") }
+            TextButton(onClick = { drawMode = true }) { Text("Draw ✏️") }
         }
         OutlinedTextField(fileName, { fileName = it.take(120) }, Modifier.fillMaxWidth(), label = { Text("Export file name") }, singleLine = true)
         Text("$origin · ${if (saved) "Draft saved locally" else "Saving draft…"}", style = MaterialTheme.typography.bodySmall)
