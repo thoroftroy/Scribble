@@ -296,7 +296,7 @@ private fun NoteCard(n: Note, store: NoteStore, onClick: () -> Unit, trash: Bool
                 if (n.pinned) Icon(WonderIcons.PushPin, "Pinned", Modifier.size(16.dp), tint = p.accent)
             }
             if (n.sketch) {
-                val bmp = remember(n.updated) { runCatching { store.sketchBitmap(n)?.let { b -> android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap() } }.getOrNull() }
+                val bmp = produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, n.updated) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { store.sketchBitmap(n)?.let { b -> android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap() } }.getOrNull() } }.value
                 if (bmp != null) androidx.compose.foundation.Image(bmp, null, Modifier.fillMaxWidth().heightIn(max = 160.dp).clip(RoundedCornerShape(6.dp)))
                 else Icon(WonderIcons.Brush, null, tint = p.secondaryText)
             } else if (n.preview.isNotBlank()) Text(n.preview, style = MaterialTheme.typography.bodyMedium, color = p.text.copy(alpha = .8f), maxLines = 8, overflow = TextOverflow.Ellipsis)
