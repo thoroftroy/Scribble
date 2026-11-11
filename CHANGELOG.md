@@ -1,5 +1,11 @@
 # Scribble changelog
 
+## v0.4.0
+
+- Polish and stability fixes from the suite-wide test pass
+- If the app ever crashes or freezes, a report goes to Control Room so it can be shared and fixed
+- App icon art is larger and fills its tile without being cut off
+
 ## v0.3.1
 
 - Edit documents anywhere on your phone: with all files access, the new “On this phone” view lists every text and Markdown file, and edits save straight into the original
