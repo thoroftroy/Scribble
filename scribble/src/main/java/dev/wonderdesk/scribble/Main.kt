@@ -1,3 +1,4 @@
+@file:OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 package dev.wonderdesk.scribble
 
 import android.content.Context
@@ -248,12 +249,12 @@ fun ScribbleApp() {
                 action = if (filter != "trash" && query.isBlank()) ({ WButton("New note", { newNote() }, icon = WonderIcons.NoteAdd, kind = ButtonKind.Primary) }) else null
             ) else LazyVerticalStaggeredGrid(StaggeredGridCells.Adaptive(160.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp), verticalItemSpacing = 10.dp) {
-                items(shown, key = { it.id }) { n ->
+                items(shown, key = { it.id }) { n -> Box(Modifier.animateItemPlacement()) {
                     NoteCard(n, store, onClick = { if (n.trashed == 0L) openId = n.id }, trash = n.trashed > 0,
                         onRestore = { val r = n.copy(trashed = 0L); val i = notes.indexOfFirst { it.id == n.id }; if (i >= 0) notes[i] = r; scope.launch(Dispatchers.IO) { store.restore(r) } },
                         onDeleteForever = { notes.remove(n); scope.launch(Dispatchers.IO) { store.deleteForever(n) } },
                         onPin = { upsert(n.copy(pinned = !n.pinned)) })
-                }
+                }}
             }
         }
     }
