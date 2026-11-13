@@ -25,6 +25,8 @@ import androidx.compose.foundation.lazy.staggeredgrid.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -93,6 +95,7 @@ fun ScribbleApp() {
     var filter by rememberSaveable { mutableStateOf("all") } // all | pinned | trash | folder:<name>
     var query by rememberSaveable { mutableStateOf("") }
     var sortRecent by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("sortRecent", true)) }
+    var listMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("list", false)) }
     val scope = rememberCoroutineScope()
     var loaded by remember { mutableStateOf(false) }
     val externals = remember { mutableStateListOf<Note>() }
@@ -186,6 +189,8 @@ fun ScribbleApp() {
         title = when { filter == "pinned" -> "Pinned"; filter == "device" -> "On this phone"; filter == "trash" -> "Trash"; filter.startsWith("folder:") -> filter.removePrefix("folder:"); else -> "Scribble" },
         actions = {
             if (filter != "trash") {
+                ToolbarButton(if (listMode) WonderIcons.GridView else WonderIcons.ViewList, if (listMode) "Show as cards" else "Show as a list", {
+                    listMode = !listMode; context.prefs("scribble").edit().putBoolean("list", listMode).apply() })
                 ToolbarButton(WonderIcons.Brush, "New sketch", { newNote(sketch = true) })
                 ToolbarButton(WonderIcons.NoteAdd, "New note", { newNote() })
             }
@@ -253,7 +258,19 @@ fun ScribbleApp() {
                 when { query.isNotBlank() -> "No matches"; filter == "trash" -> "Trash is empty"; filter == "pinned" -> "Nothing pinned"; else -> "No notes yet" },
                 when { query.isNotBlank() -> "No note contains “$query”."; filter == "trash" -> "Deleted notes stay here for 30 days."; filter == "pinned" -> "Pin a note from its toolbar to keep it on top."; else -> "Write a note, start a checklist or draw a sketch." },
                 action = if (filter != "trash" && query.isBlank()) ({ WButton("New note", { newNote() }, icon = WonderIcons.NoteAdd, kind = ButtonKind.Primary) }) else null
-            ) else LazyVerticalStaggeredGrid(StaggeredGridCells.Adaptive(160.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
+            ) else if (listMode) LazyColumn(Modifier.fillMaxSize(), state = rememberTabTopList(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                // List view: swipe right to pin or unpin, left to move to the trash (with Undo).
+                items(shown, key = { it.id }) { n -> Box(Modifier.animateItemPlacement()) {
+                    val card = @Composable { NoteCard(n, store, onClick = { if (n.trashed == 0L) openId = n.id }, trash = n.trashed > 0,
+                        onRestore = { val r = n.copy(trashed = 0L); val i = notes.indexOfFirst { it.id == n.id }; if (i >= 0) notes[i] = r; scope.launch(Dispatchers.IO) { store.restore(r) } },
+                        onDeleteForever = { notes.remove(n); scope.launch(Dispatchers.IO) { store.deleteForever(n) } },
+                        onPin = { upsert(n.copy(pinned = !n.pinned)) }) }
+                    if (n.trashed > 0L) card() else SwipeActions(
+                        start = SwipeAction(if (n.pinned) "Unpin" else "Pin", WonderIcons.PushPin, Color(0xFFE39A12)) { upsert(n.copy(pinned = !n.pinned)) },
+                        end = SwipeAction("Trash", WonderIcons.Delete, p.danger, destructive = true) { upsert(n.copy(trashed = System.currentTimeMillis())); toast.value("Moved to the Trash. You can restore it from there for 30 days") },
+                        modifier = Modifier.clip(RoundedCornerShape(p.panelRadius + 4.dp))) { card() }
+                }}
+            } else LazyVerticalStaggeredGrid(StaggeredGridCells.Adaptive(160.dp), Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp), verticalItemSpacing = 10.dp) {
                 items(shown, key = { it.id }) { n -> Box(Modifier.animateItemPlacement()) {
                     NoteCard(n, store, onClick = { if (n.trashed == 0L) openId = n.id }, trash = n.trashed > 0,

@@ -1,5 +1,10 @@
 # Scribble changelog
 
+## v0.5.5
+
+- List view: switch between cards and a list from the toolbar; in the list, swipe a note right to pin it or left to move it to the Trash
+- Widgets can now match your look: new Bliss blue and Super neon backgrounds, and “Match my Wonderdesk look” follows whatever Control Room is set to
+
 ## v0.5.4
 
 - Fixes from a full round of stress testing on every screen
