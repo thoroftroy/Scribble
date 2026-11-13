@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.5.4
+
+- Fixes from a full round of stress testing on every screen
+
 ## v0.5.3
 
 - Remind me: set a reminder on any note (in an hour, this evening, tomorrow morning or any date and time); the notification opens the note
