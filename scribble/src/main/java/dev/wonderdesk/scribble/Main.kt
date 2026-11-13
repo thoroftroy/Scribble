@@ -74,6 +74,12 @@ class MainActivity : WonderActivity() {
     companion object { val pendingIntent = mutableStateOf<Intent?>(null) }
 }
 
+/** What Android must allow for this app to work fully; shown as a banner when off and in Settings. */
+private val APP_NEEDS by lazy { listOf(
+    WonderNeed("All files access", "Finds and edits text and Markdown files anywhere on your phone", required = false, access = SpecialAccess.Kind.ALL_FILES),
+    WonderNeed.notifications("Note reminders", required = false),
+) }
+
 private const val ABOUT = "Scribble keeps your notes, lists and sketches on this phone. Organise them in folders, pin the important ones, " +
     "search everything, and import or export plain text and Markdown files. Deleted notes stay in the Trash for 30 days."
 
@@ -175,7 +181,7 @@ fun ScribbleApp() {
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { t ->
         if (t != null) { runCatching { context.contentResolver.takePersistableUriPermission(t, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }; reloadFrom(t) }
     }
-    WonderApp(
+    WonderApp(needs = APP_NEEDS, 
         appName = "Scribble", about = ABOUT,
         title = when { filter == "pinned" -> "Pinned"; filter == "device" -> "On this phone"; filter == "trash" -> "Trash"; filter.startsWith("folder:") -> filter.removePrefix("folder:"); else -> "Scribble" },
         actions = {
@@ -339,6 +345,8 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
     var colorMenu by remember { mutableStateOf(false) }
     var folderMenu by remember { mutableStateOf(false) }
     var newFolder by remember { mutableStateOf(false) }
+    var remind by remember { mutableStateOf(false) }
+    var reminderAt by remember(note.id) { mutableLongStateOf(Reminders.at(context, note.id)) }
     var tick by remember { mutableIntStateOf(0) }
     val titleFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(note.id) { if (note.title.isEmpty() && note.body.isEmpty()) runCatching { delay(150); titleFocus.requestFocus() } }
@@ -372,6 +380,7 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
             ToolbarButton(WonderIcons.PushPin, if (current.pinned) "Unpin" else "Pin", { update(current.copy(pinned = !current.pinned)) }, tint = if (current.pinned) wonderPalette().accent else null)
         },
         menu = listOf(
+            WonderMenuItem(if (reminderAt > 0) "Reminder: " + Reminders.label(reminderAt) else "Remind me", WonderIcons.Notifications) { remind = true },
             WonderMenuItem("Share", WonderIcons.Share) {
                 context.launchSafely(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_SUBJECT, title).putExtra(Intent.EXTRA_TEXT, (if (title.isNotBlank()) "$title\n\n" else "") + body.text), "Share note")) {}
             },
@@ -382,6 +391,8 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
             WonderMenuItem("Move to trash", WonderIcons.Delete, danger = true) { onDelete() },
         )
     ) {
+        val noteToast = LocalToast.current
+        if (remind) ReminderDialog(current.id, title.ifBlank { current.displayTitle }, onDismiss = { remind = false; reminderAt = Reminders.at(context, current.id) }) { noteToast(it) }
         val p = wonderPalette()
         val bg = paper(current, p.dark)
         Column(Modifier.fillMaxSize().background(bg)) {
@@ -668,7 +679,7 @@ private fun DeviceDocuments(query: String, needAccess: () -> Unit, onOpen: (Stri
     if (list == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.accent) }; return }
     val shown = remember(list, query) { if (query.isBlank()) list else list.filter { it.name.contains(query, true) || it.folder.contains(query, true) } }
     if (shown.isEmpty()) { EmptyState(if (query.isBlank()) "No text documents found" else "No matches", if (query.isBlank()) "Text and Markdown files you save or download will show up here." else "No document name contains “$query”.", icon = WonderIcons.Description); return }
-    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(16.dp)) {
+    androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = rememberTabTopList(), contentPadding = PaddingValues(16.dp)) {
         item { Text("${shown.size} document${if (shown.size == 1) "" else "s"}", Modifier.padding(6.dp, 0.dp, 6.dp, 8.dp), style = MaterialTheme.typography.bodySmall, color = p.secondaryText) }
         items(shown.size, key = { shown[it].path }) { i ->
             val d = shown[i]

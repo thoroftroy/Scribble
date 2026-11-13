@@ -1,5 +1,12 @@
 # Scribble changelog
 
+## v0.5.3
+
+- Remind me: set a reminder on any note (in an hour, this evening, tomorrow morning or any date and time); the notification opens the note
+- Tap the tab you're already on to glide back to the top of its list
+- Switches Android greys out as a “Restricted setting” are now explained: the guide walks you through unlocking them in three clear steps, and keeps showing them until the switch is really on (before, on Android 15 and newer it could hide the only hint)
+- Nothing required stays hidden: if Android is blocking something the app needs, a slim banner says what and takes you straight to the switch, and Settings › Permissions and access lists everything with its state
+
 ## v0.5.2
 
 - Notes glide into place when you add, pin or delete them
