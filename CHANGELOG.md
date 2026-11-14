@@ -1,5 +1,12 @@
 # Scribble changelog
 
+## v0.5.6
+
+- Markdown tables: written as | Column | Column |, they show as a real table in Preview. Tap a column heading to sort by it (numbers sort as numbers); tap again to reverse. The note is sorted too
+- Insert table button in the editor toolbar starts a ready-made table
+- Folder tree like Obsidian: the view button now cycles cards, list and tree. Folders named like “Work/Projects” nest inside each other and open with a tap
+- Preview shows smaller headings and indented bullet lists
+
 ## v0.5.5
 
 - List view: switch between cards and a list from the toolbar; in the list, swipe a note right to pin it or left to move it to the Trash

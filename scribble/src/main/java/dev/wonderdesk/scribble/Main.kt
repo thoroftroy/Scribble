@@ -96,6 +96,8 @@ fun ScribbleApp() {
     var query by rememberSaveable { mutableStateOf("") }
     var sortRecent by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("sortRecent", true)) }
     var listMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("list", false)) }
+    var treeMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("tree", false)) }
+    val expanded = remember { mutableStateListOf<String>() }
     val scope = rememberCoroutineScope()
     var loaded by remember { mutableStateOf(false) }
     val externals = remember { mutableStateListOf<Note>() }
@@ -189,8 +191,10 @@ fun ScribbleApp() {
         title = when { filter == "pinned" -> "Pinned"; filter == "device" -> "On this phone"; filter == "trash" -> "Trash"; filter.startsWith("folder:") -> filter.removePrefix("folder:"); else -> "Scribble" },
         actions = {
             if (filter != "trash") {
-                ToolbarButton(if (listMode) WonderIcons.GridView else WonderIcons.ViewList, if (listMode) "Show as cards" else "Show as a list", {
-                    listMode = !listMode; context.prefs("scribble").edit().putBoolean("list", listMode).apply() })
+                // Cards → list → folder tree → cards.
+                ToolbarButton(when { treeMode -> WonderIcons.GridView; listMode -> WonderIcons.Hub; else -> WonderIcons.ViewList }, when { treeMode -> "Show as cards"; listMode -> "Show as a folder tree"; else -> "Show as a list" }, {
+                    when { treeMode -> { treeMode = false; listMode = false }; listMode -> { treeMode = true }; else -> listMode = true }
+                    context.prefs("scribble").edit().putBoolean("list", listMode).putBoolean("tree", treeMode).apply() })
                 ToolbarButton(WonderIcons.Brush, "New sketch", { newNote(sketch = true) })
                 ToolbarButton(WonderIcons.NoteAdd, "New note", { newNote() })
             }
@@ -258,7 +262,29 @@ fun ScribbleApp() {
                 when { query.isNotBlank() -> "No matches"; filter == "trash" -> "Trash is empty"; filter == "pinned" -> "Nothing pinned"; else -> "No notes yet" },
                 when { query.isNotBlank() -> "No note contains “$query”."; filter == "trash" -> "Deleted notes stay here for 30 days."; filter == "pinned" -> "Pin a note from its toolbar to keep it on top."; else -> "Write a note, start a checklist or draw a sketch." },
                 action = if (filter != "trash" && query.isBlank()) ({ WButton("New note", { newNote() }, icon = WonderIcons.NoteAdd, kind = ButtonKind.Primary) }) else null
-            ) else if (listMode) LazyColumn(Modifier.fillMaxSize(), state = rememberTabTopList(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            ) else if (treeMode) LazyColumn(Modifier.fillMaxSize(), state = rememberTabTopList(), contentPadding = PaddingValues(12.dp)) {
+                // Folder tree like Obsidian: "Work/Projects" nests under "Work". Tap a folder to open or close it.
+                val all = shown.filter { it.trashed == 0L }
+                val paths = (all.map { it.folder }.filter { it.isNotBlank() } + folders).flatMap { f -> f.split('/').indices.map { k -> f.split('/').take(k + 1).joinToString("/") } }.distinct().sorted()
+                fun visible(path: String) = path.split('/').let { parts -> (1 until parts.size).all { k -> parts.take(k).joinToString("/") in expanded } }
+                paths.filter { visible(it) }.forEach { path ->
+                    val depth = path.count { it == '/' }
+                    val open = path in expanded
+                    item(key = "f:$path") {
+                        ListRow(path.substringAfterLast('/'), Modifier.padding(start = (depth * 18).dp), subtitle = "${all.count { it.folder == path || it.folder.startsWith("$path/") }} notes",
+                            icon = if (open) WonderIcons.FolderOpen else WonderIcons.Folder, tint = Color(0xFF4A90E2),
+                            trailing = { Icon(if (open) WonderIcons.ExpandLess else WonderIcons.ExpandMore, null, tint = p.secondaryText) },
+                            onClick = { if (open) expanded.removeAll { it == path || it.startsWith("$path/") } else expanded.add(path) })
+                    }
+                    if (open) items(all.filter { it.folder == path }, key = { "n:" + it.id }) { n ->
+                        ListRow(n.displayTitle, Modifier.padding(start = ((depth + 1) * 18).dp), subtitle = n.preview.lineSequence().drop(1).firstOrNull { it.isNotBlank() }?.take(80),
+                            icon = if (n.sketch) WonderIcons.Brush else WonderIcons.Description, tint = if (n.pinned) Color(0xFFE39A12) else p.secondaryText, onClick = { openId = n.id })
+                    }
+                }
+                val loose = all.filter { it.folder.isBlank() }
+                if (loose.isNotEmpty()) item { Text("Not in a folder", Modifier.padding(12.dp, 14.dp, 12.dp, 4.dp), style = MaterialTheme.typography.labelLarge, color = p.secondaryText) }
+                items(loose, key = { "n:" + it.id }) { n -> ListRow(n.displayTitle, icon = if (n.sketch) WonderIcons.Brush else WonderIcons.Description, tint = if (n.pinned) Color(0xFFE39A12) else p.secondaryText, onClick = { openId = n.id }) }
+            } else if (listMode) LazyColumn(Modifier.fillMaxSize(), state = rememberTabTopList(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 // List view: swipe right to pin or unpin, left to move to the trash (with Undo).
                 items(shown, key = { it.id }) { n -> Box(Modifier.animateItemPlacement()) {
                     val card = @Composable { NoteCard(n, store, onClick = { if (n.trashed == 0L) openId = n.id }, trash = n.trashed > 0,
@@ -391,6 +417,11 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
             ToolbarButton(WonderIcons.Undo, "Undo", { if (undo.isNotEmpty()) { redo.addLast(body); body = undo.removeLast(); tick++ } }, enabled = tick >= 0 && undo.isNotEmpty())
             ToolbarButton(WonderIcons.Redo, "Redo", { if (redo.isNotEmpty()) { undo.addLast(body); body = redo.removeLast(); tick++ } }, enabled = tick >= 0 && redo.isNotEmpty())
             ToolbarButton(if (preview) WonderIcons.Edit else WonderIcons.Visibility, if (preview) "Edit" else "Preview", { preview = !preview })
+            if (!preview) ToolbarButton(WonderIcons.GridView, "Insert table", {
+                val t = "\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |\n"
+                val at = body.selection.start.coerceIn(0, body.text.length)
+                setBody(TextFieldValue(body.text.substring(0, at) + t + body.text.substring(at), TextRange(at + t.indexOf("|  |") + 2)))
+            })
             if (!preview) ToolbarButton(WonderIcons.CheckCircle, "Checklist item", {
                 val (t, c) = toggleCheck(body.text, body.selection.start); setBody(TextFieldValue(t, TextRange(c)))
             })
@@ -422,7 +453,7 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                 val lineHeight = 26.sp
                 val ruled = p.text.copy(alpha = if (p.dark) .08f else .07f)
                 if (preview) {
-                    MarkdownView(body.text, onToggle = { line -> setBody(TextFieldValue(toggleLine(body.text, line))) }, onLink = onOpenLink)
+                    MarkdownView(body.text, onToggle = { line -> setBody(TextFieldValue(toggleLine(body.text, line))) }, onLink = onOpenLink, onReplace = { setBody(TextFieldValue(it)) })
                     val me = (title.ifBlank { current.displayTitle }).lowercase()
                     val back = allNotes.filter { it.id != current.id && it.trashed == 0L && me in it.links }
                     if (back.isNotEmpty()) {
@@ -625,29 +656,78 @@ private fun SketchEditor(note: Note, store: NoteStore, onChangeLocal: (Note) -> 
 /* -------------------------------------------- markdown preview -------------------------------------------- */
 
 @Composable
-private fun MarkdownView(text: String, onToggle: (Int) -> Unit, onLink: (String) -> Unit) {
+private fun MarkdownView(text: String, onToggle: (Int) -> Unit, onLink: (String) -> Unit, onReplace: (String) -> Unit = {}) {
     val p = wonderPalette()
-    var inCode = false
+    val lines = text.lines()
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-        text.lines().forEachIndexed { i, raw ->
-            if (raw.trim().startsWith("```")) { inCode = !inCode; return@forEachIndexed }
-            if (inCode) { Text(raw, Modifier.fillMaxWidth().background(p.window).padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)); return@forEachIndexed }
+        var i = 0
+        var inCode = false
+        while (i < lines.size) {
+            val raw = lines[i]; val idx = i
+            if (raw.trim().startsWith("```")) { inCode = !inCode; i++; continue }
+            if (inCode) { Text(raw, Modifier.fillMaxWidth().background(p.window).padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)); i++; continue }
             val l = raw.trimStart()
+            // A Markdown table: consecutive lines starting with |.
+            if (l.startsWith("|")) {
+                var end = i; while (end < lines.size && lines[end].trimStart().startsWith("|")) end++
+                MarkdownTable(lines.subList(i, end), p, onLink) { sorted -> onReplace((lines.subList(0, idx) + sorted + lines.subList(end, lines.size)).joinToString("\n")) }
+                i = end; continue
+            }
             when {
                 l.startsWith("# ") -> Text(inline(l.drop(2), p), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(top = 8.dp))
                 l.startsWith("## ") -> Text(inline(l.drop(3), p), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(top = 6.dp))
                 l.startsWith("### ") -> Text(inline(l.drop(4), p), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
+                l.startsWith("#### ") || l.startsWith("##### ") -> Text(inline(l.substringAfter(' '), p), style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold))
                 isTodo(l) -> Row(verticalAlignment = Alignment.CenterVertically) {
-                    Checkbox(isDone(l), { onToggle(i) })
+                    Checkbox(isDone(l), { onToggle(idx) })
                     val body = l.removePrefix("- [ ] ").removePrefix("- [x] ").removePrefix("- [X] ").removePrefix("☐ ").removePrefix("☑ ")
                     LinkText(body, p, onLink, if (isDone(l)) androidx.compose.ui.text.style.TextDecoration.LineThrough else null)
                 }
-                l.startsWith("- ") || l.startsWith("* ") || l.startsWith("• ") -> Row { Text("•  ", color = p.accent); LinkText(l.drop(2), p, onLink) }
+                l.startsWith("- ") || l.startsWith("* ") || l.startsWith("• ") -> Row(Modifier.padding(start = ((raw.length - l.length) / 2 * 12).dp)) { Text("•  ", color = p.accent); LinkText(l.drop(2), p, onLink) }
                 Regex("^\\d+\\. ").containsMatchIn(l) -> Row { Text(l.substringBefore(' ') + " ", color = p.accent); LinkText(l.substringAfter(' '), p, onLink) }
                 l.startsWith("> ") -> Row(Modifier.height(IntrinsicSize.Min)) { Box(Modifier.width(3.dp).fillMaxHeight().background(p.accent)); Spacer(Modifier.width(10.dp)); LinkText(l.drop(2), p, onLink) }
                 l == "---" || l == "***" -> HorizontalDivider(Modifier.padding(vertical = 8.dp), color = p.separator)
                 l.isBlank() -> Spacer(Modifier.height(6.dp))
                 else -> LinkText(l, p, onLink)
+            }
+            i++
+        }
+    }
+}
+
+/** Splits a table row into its cells. */
+private fun cells(row: String) = row.trim().removePrefix("|").removeSuffix("|").split("|").map { it.trim() }
+
+/** A Markdown table drawn as a real grid. Tap a column heading to sort by it (again to reverse); the note is updated too. */
+@Composable
+private fun MarkdownTable(rows: List<String>, p: WonderPalette, onLink: (String) -> Unit, onSorted: (List<String>) -> Unit) {
+    val header = cells(rows.first())
+    val hasRule = rows.size > 1 && cells(rows[1]).all { it.matches(Regex(":?-{2,}:?")) }
+    val body = rows.drop(if (hasRule) 2 else 1)
+    var sortCol by remember(rows) { mutableIntStateOf(-1) }
+    var asc by remember(rows) { mutableStateOf(true) }
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(p.panelRadius)
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(shape).border(1.dp, p.panelBorder, shape).horizontalScroll(rememberScrollState())) {
+        val cols = maxOf(header.size, body.maxOfOrNull { cells(it).size } ?: 0)
+        Row(Modifier.background(p.accent.copy(alpha = .12f))) {
+            (0 until cols).forEach { c ->
+                Row(Modifier.width(140.dp).clickable {
+                    val nextAsc = if (sortCol == c) !asc else true
+                    fun key(r: String) = cells(r).getOrElse(c) { "" }
+                    val num = body.all { key(it).replace(",", "").toDoubleOrNull() != null || key(it).isBlank() }
+                    val sorted = if (num) body.sortedBy { key(it).replace(",", "").toDoubleOrNull() ?: Double.MAX_VALUE } else body.sortedBy { key(it).lowercase() }
+                    sortCol = c; asc = nextAsc
+                    onSorted(rows.take(if (hasRule) 2 else 1) + if (nextAsc) sorted else sorted.reversed())
+                }.padding(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(header.getOrElse(c) { "" }, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold))
+                    if (sortCol == c) Icon(if (asc) WonderIcons.ArrowUpward else WonderIcons.ArrowDownward, null, Modifier.size(14.dp), tint = p.accent)
+                }
+            }
+        }
+        body.forEachIndexed { r, row ->
+            Row(Modifier.background(if (r % 2 == 1) p.window.copy(alpha = .6f) else Color.Transparent)) {
+                val cs = cells(row)
+                (0 until cols).forEach { c -> Box(Modifier.width(140.dp).padding(10.dp)) { LinkText(cs.getOrElse(c) { "" }, p, onLink) } }
             }
         }
     }
