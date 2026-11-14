@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.5.7
+
+- Widgets: choose the title colour in each widget's settings (automatic, white, dark, Aqua blue, Super pink or gold), on top of the background looks
+
 ## v0.5.6
 
 - Markdown tables: written as | Column | Column |, they show as a real table in Preview. Tap a column heading to sort by it (numbers sort as numbers); tap again to reverse. The note is sorted too
