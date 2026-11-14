@@ -96,8 +96,8 @@ fun ScribbleApp() {
     var query by rememberSaveable { mutableStateOf("") }
     var sortRecent by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("sortRecent", true)) }
     var templates by remember { mutableStateOf(false) }
-    var listMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("list", false)) }
-    var treeMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("tree", false)) }
+    var listMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("viewList", false)) }
+    var treeMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("viewTree", false)) }
     val expanded = remember { mutableStateListOf<String>() }
     val scope = rememberCoroutineScope()
     var loaded by remember { mutableStateOf(false) }
@@ -195,7 +195,7 @@ fun ScribbleApp() {
                 // Cards → list → folder tree → cards.
                 ToolbarButton(when { treeMode -> WonderIcons.GridView; listMode -> WonderIcons.Hub; else -> WonderIcons.ViewList }, when { treeMode -> "Show as cards"; listMode -> "Show as a folder tree"; else -> "Show as a list" }, {
                     when { treeMode -> { treeMode = false; listMode = false }; listMode -> { treeMode = true }; else -> listMode = true }
-                    context.prefs("scribble").edit().putBoolean("list", listMode).putBoolean("tree", treeMode).apply() })
+                    context.prefs("scribble").edit().putBoolean("viewList", listMode).putBoolean("viewTree", treeMode).apply() })
                 ToolbarButton(WonderIcons.Brush, "New sketch", { newNote(sketch = true) })
                 ToolbarButton(WonderIcons.NoteAdd, "New note", { newNote() })
             }

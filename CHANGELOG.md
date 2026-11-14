@@ -1,5 +1,10 @@
 # Scribble changelog
 
+## v0.5.11
+
+- Fixed: after switching to the tree or list view, Scribble could crash every time it opened. It now opens normally again on its own
+- Notepad widget: checklist lines tick straight from the home screen (Android 12 and newer), headings stand out, and each widget can show the note you pick or your pinned/latest note
+
 ## v0.5.10
 
 - Today's note (⋮ menu): one note per day, like Obsidian's daily notes. Opens today's or starts it with a plans checklist

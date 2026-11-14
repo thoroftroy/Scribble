@@ -115,6 +115,9 @@ class NoteStore(private val context: Context) {
     private var index = JSONObject()   // id -> {path, pinned, color, created, trashed, strokes}
 
     private fun openFs(): Fs {
+        // Scribble 0.5.6–0.5.10 stored the view mode under "tree", the same name as the notes folder; clear that.
+        if (prefs.all["tree"] is Boolean) prefs.edit().remove("tree").apply()
+        if (prefs.all["list"] is Boolean) prefs.edit().remove("list").apply()
         // With all-files access, a folder on the phone is read directly, which is far faster than through the picker.
         prefs.getString("path", null)?.let { p -> val f = File(p); if (android.os.Environment.isExternalStorageManager() && f.isDirectory) return FileFs(f, f.name) }
         return prefs.getString("tree", null)?.let { t -> runCatching { SafFs(context, Uri.parse(t)) }.getOrNull() }
