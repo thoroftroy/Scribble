@@ -1,5 +1,11 @@
 # Scribble changelog
 
+## v0.5.10
+
+- Today's note (⋮ menu): one note per day, like Obsidian's daily notes. Opens today's or starts it with a plans checklist
+- New from a template: Journal, Meeting, Checklist, Recipe, Project (with a task table) and Reading notes
+- Fixed a crash when moving around with arrow keys or Tab while a screen was closing
+
 ## v0.5.9
 
 - Lighter on the battery: in the Super look the drifting sparkles settle after a few seconds without a touch (the next tap wakes them), so a screen you're reading no longer redraws 25 times a second

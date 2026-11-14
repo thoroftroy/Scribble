@@ -95,6 +95,7 @@ fun ScribbleApp() {
     var filter by rememberSaveable { mutableStateOf("all") } // all | pinned | trash | folder:<name>
     var query by rememberSaveable { mutableStateOf("") }
     var sortRecent by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("sortRecent", true)) }
+    var templates by remember { mutableStateOf(false) }
     var listMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("list", false)) }
     var treeMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("tree", false)) }
     val expanded = remember { mutableStateListOf<String>() }
@@ -215,6 +216,12 @@ fun ScribbleApp() {
             }
         },
         menu = listOfNotNull(
+            WonderMenuItem("Today's note", WonderIcons.Today) {
+                // One note per day, like Obsidian's daily notes: opens today's, or starts it.
+                val title = java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("EEEE d MMMM yyyy"))
+                notes.firstOrNull { it.title == title && it.trashed == 0L }?.let { openId = it.id } ?: newNote("## Plans\n- [ ] \n\n## Notes\n\n", title)
+            },
+            WonderMenuItem("New from a template…", WonderIcons.Description) { templates = true },
             WonderMenuItem("Import text file", WonderIcons.UploadFile) { importer.launch(arrayOf("text/*", "application/json", "application/xml")) },
             WonderMenuItem("New folder", WonderIcons.CreateNewFolder) { newFolder = true },
             WonderMenuItem(if (sortRecent) "Sort by title" else "Sort by last edited", WonderIcons.Sort) { sortRecent = !sortRecent; context.prefs("scribble").edit().putBoolean("sortRecent", sortRecent).apply() },
@@ -307,6 +314,10 @@ fun ScribbleApp() {
             }
         }
     }
+    if (templates) WonderDialog(onDismissRequest = { templates = false }, title = { Text("New from a template") }, text = {
+        Panel { TEMPLATES.forEachIndexed { i, (name, icon, body) -> if (i > 0) PanelDivider()
+            ListRow(name, subtitle = body.lineSequence().filter { it.isNotBlank() }.take(2).joinToString(" · ").take(60), icon = icon, tint = wonderPalette().accent, onClick = { templates = false; newNote(body, if (name == "Meeting") "Meeting " + java.time.LocalDate.now() else "") }) } }
+    }, confirmButton = { TextButton(onClick = { templates = false }) { Text("Cancel") } })
     if (newFolder) InputDialog("New folder", "Folder name", confirm = "Create", onDismiss = { newFolder = false }) { name ->
         folders = (folders + name).distinct(); store.saveFolders(folders); filter = "folder:$name"
     }
@@ -786,3 +797,14 @@ private fun DeviceDocuments(query: String, needAccess: () -> Unit, onOpen: (Stri
         }
     }
 }
+
+
+/** Ready-made note layouts. */
+private val TEMPLATES = listOf(
+    Triple("Journal", WonderIcons.Bedtime, "## How today went\n\n## Grateful for\n- \n\n## Tomorrow\n- [ ] \n"),
+    Triple("Meeting", WonderIcons.Event, "**Who:** \n**When:** \n\n## Agenda\n- \n\n## Notes\n\n## Actions\n- [ ] \n"),
+    Triple("Checklist", WonderIcons.CheckCircle, "- [ ] \n- [ ] \n- [ ] \n"),
+    Triple("Recipe", WonderIcons.Notes, "## Ingredients\n- \n\n## Steps\n1. \n\n**Serves:** \n**Time:** \n"),
+    Triple("Project", WonderIcons.Work, "## Goal\n\n## Tasks\n| Task | Who | Due |\n| --- | --- | --- |\n|  |  |  |\n\n## Notes\n"),
+    Triple("Reading notes", WonderIcons.MenuBook, "**Book:** \n**Author:** \n\n## Key ideas\n- \n\n## Quotes\n> \n"),
+)
