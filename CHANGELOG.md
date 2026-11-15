@@ -1,5 +1,11 @@
 # Scribble changelog
 
+## v0.5.12
+
+- Long-press a note for Delete (it goes to the Trash, like swiping), next to Pin and Open
+- Titles shrink to fit instead of being cut off
+- Fixed a rare crash from Android's scrolling-screenshot feature
+
 ## v0.5.11
 
 - Fixed: after switching to the tree or list view, Scribble could crash every time it opened. It now opens normally again on its own

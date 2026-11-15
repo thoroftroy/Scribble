@@ -297,7 +297,8 @@ fun ScribbleApp() {
                     val card = @Composable { NoteCard(n, store, onClick = { if (n.trashed == 0L) openId = n.id }, trash = n.trashed > 0,
                         onRestore = { val r = n.copy(trashed = 0L); val i = notes.indexOfFirst { it.id == n.id }; if (i >= 0) notes[i] = r; scope.launch(Dispatchers.IO) { store.restore(r) } },
                         onDeleteForever = { notes.remove(n); scope.launch(Dispatchers.IO) { store.deleteForever(n) } },
-                        onPin = { upsert(n.copy(pinned = !n.pinned)) }) }
+                        onPin = { upsert(n.copy(pinned = !n.pinned)) },
+                        onTrash = { upsert(n.copy(trashed = System.currentTimeMillis())); toast.value("Moved to the Trash. You can restore it from there for 30 days") }) }
                     if (n.trashed > 0L) card() else SwipeActions(
                         start = SwipeAction(if (n.pinned) "Unpin" else "Pin", WonderIcons.PushPin, Color(0xFFE39A12)) { upsert(n.copy(pinned = !n.pinned)) },
                         end = SwipeAction("Trash", WonderIcons.Delete, p.danger, destructive = true) { upsert(n.copy(trashed = System.currentTimeMillis())); toast.value("Moved to the Trash. You can restore it from there for 30 days") },
@@ -309,7 +310,8 @@ fun ScribbleApp() {
                     NoteCard(n, store, onClick = { if (n.trashed == 0L) openId = n.id }, trash = n.trashed > 0,
                         onRestore = { val r = n.copy(trashed = 0L); val i = notes.indexOfFirst { it.id == n.id }; if (i >= 0) notes[i] = r; scope.launch(Dispatchers.IO) { store.restore(r) } },
                         onDeleteForever = { notes.remove(n); scope.launch(Dispatchers.IO) { store.deleteForever(n) } },
-                        onPin = { upsert(n.copy(pinned = !n.pinned)) })
+                        onPin = { upsert(n.copy(pinned = !n.pinned)) },
+                        onTrash = { upsert(n.copy(trashed = System.currentTimeMillis())); toast.value("Moved to the Trash. You can restore it from there for 30 days") })
                 }}
             }
         }
@@ -342,7 +344,7 @@ private fun paper(n: Note, dark: Boolean) = Color(if (dark) NOTE_COLORS[n.color.
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun NoteCard(n: Note, store: NoteStore, onClick: () -> Unit, trash: Boolean, onRestore: () -> Unit, onDeleteForever: () -> Unit, onPin: () -> Unit) {
+private fun NoteCard(n: Note, store: NoteStore, onClick: () -> Unit, trash: Boolean, onRestore: () -> Unit, onDeleteForever: () -> Unit, onPin: () -> Unit, onTrash: () -> Unit) {
     val p = wonderPalette()
     var menu by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(p.panelRadius)
@@ -379,6 +381,7 @@ private fun NoteCard(n: Note, store: NoteStore, onClick: () -> Unit, trash: Bool
             } else {
                 DropdownMenuItem({ Text(if (n.pinned) "Unpin" else "Pin") }, { menu = false; onPin() }, leadingIcon = { Icon(WonderIcons.PushPin, null) })
                 DropdownMenuItem({ Text("Open") }, { menu = false; onClick() }, leadingIcon = { Icon(WonderIcons.Edit, null) })
+                DropdownMenuItem({ Text("Delete", color = p.danger) }, { menu = false; onTrash() }, leadingIcon = { Icon(WonderIcons.Delete, null, tint = p.danger) })
             }
         }
     }
