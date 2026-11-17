@@ -1,5 +1,10 @@
 # Scribble changelog
 
+## v0.5.15
+
+- Text size and accent colour chosen in Control Room now apply here
+- New Rotate with the phone switch in Settings
+
 ## v0.5.14
 
 - New editor settings: text size, line spacing, ruled lines, typewriter font, autocorrect, capitalisation, word count bar and save delay
