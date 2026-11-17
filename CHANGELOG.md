@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.5.18
+
+- Settings are grouped under clear headings: text, typing and notes
+
 ## v0.5.17
 
 - New settings: title new notes with today's date, and text new notes start with, such as a checklist

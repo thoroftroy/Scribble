@@ -205,6 +205,7 @@ fun ScribbleApp() {
             }
         },
         settings = {
+            val sp = store.prefs
             Panel(title = "Notes folder", footer = "Notes are plain Markdown and text files. Pick any folder, such as an Obsidian vault or Documents/Notes, to keep them where other apps and computers can open them.") {
                 ListRow(store.fs.label, subtitle = if (!store.usesSharedFolder) "Private to Scribble" else if (store.prefs.getString("path", null) != null && Documents.canEditAll()) "Shared folder · fast direct access" else "Shared folder", icon = WonderIcons.Folder, tint = Color(0xFF4A90E2))
                 PanelDivider()
@@ -217,8 +218,8 @@ fun ScribbleApp() {
             Panel(title = "Editor") {
                 var pv by remember { mutableStateOf(store.prefs.getBoolean("openInPreview", false)) }
                 SwitchRow("Open notes in preview", pv, { pv = it; store.prefs.edit().putBoolean("openInPreview", it).apply() }, subtitle = "Show formatted Markdown first; tap Edit to change it")
-                val sp = store.prefs
-                PanelDivider()
+            }
+            Panel(title = "Text") {
                 var fs by remember { mutableIntStateOf(sp.getInt("fontSize", 16)) }
                 Column(Modifier.padding(16.dp, 10.dp)) { Text("Text size: $fs", style = MaterialTheme.typography.labelLarge); Slider(fs.toFloat(), { fs = it.toInt() }, valueRange = 11f..32f, onValueChangeFinished = { sp.edit().putInt("fontSize", fs).apply() }) }
                 PanelDivider()
@@ -230,7 +231,8 @@ fun ScribbleApp() {
                 PanelDivider()
                 var mono by remember { mutableStateOf(sp.getBoolean("monoEditor", false)) }
                 SwitchRow("Typewriter font", mono, { mono = it; sp.edit().putBoolean("monoEditor", it).apply() }, subtitle = "Equal-width letters, good for code and tables")
-                PanelDivider()
+            }
+            Panel(title = "Typing") {
                 var ac by remember { mutableStateOf(sp.getBoolean("autoCorrect", true)) }
                 SwitchRow("Keyboard autocorrect", ac, { ac = it; sp.edit().putBoolean("autoCorrect", it).apply() })
                 PanelDivider()
@@ -239,7 +241,8 @@ fun ScribbleApp() {
                 PanelDivider()
                 var st by remember { mutableStateOf(sp.getBoolean("showStats", true)) }
                 SwitchRow("Show word count bar", st, { st = it; sp.edit().putBoolean("showStats", it).apply() })
-                PanelDivider()
+            }
+            Panel(title = "Notes") {
                 var at by remember { mutableStateOf(sp.getBoolean("autoTitle", false)) }
                 SwitchRow("Title new notes with today's date", at, { at = it; sp.edit().putBoolean("autoTitle", it).apply() }, icon = WonderIcons.Today, tint = Color(0xFF1E7FE8))
                 PanelDivider()
