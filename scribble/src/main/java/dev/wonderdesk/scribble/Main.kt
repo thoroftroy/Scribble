@@ -264,7 +264,7 @@ fun ScribbleApp() {
                     if (doc == null) toast.value("Couldn't open that file") else { externals.removeAll { it.id == doc.id }; externals.add(doc); openId = doc.id }
                 }
             }
-            else if (!loaded) Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.accent) }
+            else if (!loaded) LoadingPane("Opening your notes", detail = "Reading your notes folder")
             else if (shown.isEmpty()) EmptyState(
                 when { query.isNotBlank() -> "No matches"; filter == "trash" -> "Trash is empty"; filter == "pinned" -> "Nothing pinned"; else -> "No notes yet" },
                 when { query.isNotBlank() -> "No note contains “$query”."; filter == "trash" -> "Deleted notes stay here for 30 days."; filter == "pinned" -> "Pin a note from its toolbar to keep it on top."; else -> "Write a note, start a checklist or draw a sketch." },
@@ -787,7 +787,7 @@ private fun DeviceDocuments(query: String, needAccess: () -> Unit, onOpen: (Stri
     if (!access) { EmptyState("See every document on your phone", "Turn on all files access to browse and edit text and Markdown files anywhere on your phone, right where they are.",
         icon = WonderIcons.Description, action = { WButton("Turn on all files access", needAccess, icon = WonderIcons.Storage, kind = ButtonKind.Primary) }); return }
     val list = docs
-    if (list == null) { Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = p.accent) }; return }
+    if (list == null) { LoadingPane("Finding documents on this phone", detail = "Looking for text and Markdown files in every folder"); return }
     val shown = remember(list, query) { if (query.isBlank()) list else list.filter { it.name.contains(query, true) || it.folder.contains(query, true) } }
     if (shown.isEmpty()) { EmptyState(if (query.isBlank()) "No text documents found" else "No matches", if (query.isBlank()) "Text and Markdown files you save or download will show up here." else "No document name contains “$query”.", icon = WonderIcons.Description); return }
     androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = rememberTabTopList(), contentPadding = PaddingValues(16.dp)) {

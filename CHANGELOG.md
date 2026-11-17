@@ -1,5 +1,10 @@
 # Scribble changelog
 
+## v0.5.13
+
+- Loading screens now say what they are doing instead of showing a bare spinner
+- Wording tidied so no sentence needs a dash
+
 ## v0.5.12
 
 - Long-press a note for Delete (it goes to the Trash, like swiping), next to Pin and Open
