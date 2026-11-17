@@ -115,7 +115,11 @@ fun ScribbleApp() {
         scope.launch(Dispatchers.IO) { store.save(n); NotepadWidget.refresh(context) }
     }
     fun newNote(body: String = "", title: String = "", sketch: Boolean = false): Note {
-        val n = Note(title = title, body = body, sketch = sketch, folder = filter.removePrefix("folder:").takeIf { filter.startsWith("folder:") } ?: "")
+        val np = context.prefs("scribble")
+        val blank = title.isBlank() && body.isBlank() && !sketch
+        val t0 = if (blank && np.getBoolean("autoTitle", false)) java.time.LocalDate.now().format(java.time.format.DateTimeFormatter.ofPattern("d MMM yyyy")) else title
+        val b0 = if (blank) np.getString("starter", "").orEmpty() else body
+        val n = Note(title = t0, body = b0, sketch = sketch, folder = filter.removePrefix("folder:").takeIf { filter.startsWith("folder:") } ?: "")
         upsert(n); openId = n.id; return n
     }
     LaunchedEffect(Unit) {
@@ -235,6 +239,13 @@ fun ScribbleApp() {
                 PanelDivider()
                 var st by remember { mutableStateOf(sp.getBoolean("showStats", true)) }
                 SwitchRow("Show word count bar", st, { st = it; sp.edit().putBoolean("showStats", it).apply() })
+                PanelDivider()
+                var at by remember { mutableStateOf(sp.getBoolean("autoTitle", false)) }
+                SwitchRow("Title new notes with today's date", at, { at = it; sp.edit().putBoolean("autoTitle", it).apply() }, icon = WonderIcons.Today, tint = Color(0xFF1E7FE8))
+                PanelDivider()
+                var st0 by remember { mutableStateOf(sp.getString("starter", "") ?: "") }
+                Column(Modifier.padding(16.dp, 10.dp)) { Text("Text new notes start with", style = MaterialTheme.typography.labelLarge)
+                    OutlinedTextField(st0, { st0 = it; sp.edit().putString("starter", it).apply() }, Modifier.fillMaxWidth(), placeholder = { Text("For example: - [ ] ") }) }
                 PanelDivider()
                 var cl by remember { mutableIntStateOf(sp.getInt("cardLines", 8)) }
                 Column(Modifier.padding(16.dp, 10.dp)) { Text("Lines shown on each note card", style = MaterialTheme.typography.labelLarge)

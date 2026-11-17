@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.5.17
+
+- New settings: title new notes with today's date, and text new notes start with, such as a checklist
+
 ## v0.5.16
 
 - New setting: how many lines of each note show on its card
