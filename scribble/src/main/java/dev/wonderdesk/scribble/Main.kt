@@ -236,6 +236,10 @@ fun ScribbleApp() {
                 var st by remember { mutableStateOf(sp.getBoolean("showStats", true)) }
                 SwitchRow("Show word count bar", st, { st = it; sp.edit().putBoolean("showStats", it).apply() })
                 PanelDivider()
+                var cl by remember { mutableIntStateOf(sp.getInt("cardLines", 8)) }
+                Column(Modifier.padding(16.dp, 10.dp)) { Text("Lines shown on each note card", style = MaterialTheme.typography.labelLarge)
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(2, 4, 8, 14).forEach { v -> Chip("$v", cl == v, { cl = v; sp.edit().putInt("cardLines", v).apply() }) } } }
+                PanelDivider()
                 var sd by remember { mutableIntStateOf(sp.getInt("saveDelay", 350)) }
                 Column(Modifier.padding(16.dp, 10.dp)) { Text("Save ${sd / 1000f} s after you stop typing", style = MaterialTheme.typography.labelLarge); Slider(sd.toFloat(), { sd = it.toInt() }, valueRange = 100f..3000f, onValueChangeFinished = { sp.edit().putInt("saveDelay", sd).apply() }) }
             }
@@ -387,7 +391,7 @@ private fun NoteCard(n: Note, store: NoteStore, onClick: () -> Unit, trash: Bool
                 val bmp = produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, n.updated) { value = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { store.sketchBitmap(n)?.let { b -> android.graphics.BitmapFactory.decodeByteArray(b, 0, b.size)?.asImageBitmap() } }.getOrNull() } }.value
                 if (bmp != null) androidx.compose.foundation.Image(bmp, null, Modifier.fillMaxWidth().heightIn(max = 160.dp).clip(RoundedCornerShape(6.dp)))
                 else Icon(WonderIcons.Brush, null, tint = p.secondaryText)
-            } else if (n.preview.isNotBlank()) Text(n.preview, style = MaterialTheme.typography.bodyMedium, color = p.text.copy(alpha = .8f), maxLines = 8, overflow = TextOverflow.Ellipsis)
+            } else if (n.preview.isNotBlank()) Text(n.preview, style = MaterialTheme.typography.bodyMedium, color = p.text.copy(alpha = .8f), maxLines = LocalContext.current.prefs("scribble").getInt("cardLines", 8), overflow = TextOverflow.Ellipsis)
             n.checklist?.let { (done, total) ->
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     AquaProgress(done.toFloat() / total, Modifier.weight(1f))

@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.5.16
+
+- New setting: how many lines of each note show on its card
+
 ## v0.5.15
 
 - Text size and accent colour chosen in Control Room now apply here
