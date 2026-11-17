@@ -213,6 +213,31 @@ fun ScribbleApp() {
             Panel(title = "Editor") {
                 var pv by remember { mutableStateOf(store.prefs.getBoolean("openInPreview", false)) }
                 SwitchRow("Open notes in preview", pv, { pv = it; store.prefs.edit().putBoolean("openInPreview", it).apply() }, subtitle = "Show formatted Markdown first; tap Edit to change it")
+                val sp = store.prefs
+                PanelDivider()
+                var fs by remember { mutableIntStateOf(sp.getInt("fontSize", 16)) }
+                Column(Modifier.padding(16.dp, 10.dp)) { Text("Text size: $fs", style = MaterialTheme.typography.labelLarge); Slider(fs.toFloat(), { fs = it.toInt() }, valueRange = 11f..32f, onValueChangeFinished = { sp.edit().putInt("fontSize", fs).apply() }) }
+                PanelDivider()
+                var ls by remember { mutableIntStateOf(sp.getInt("lineSpacing", 160)) }
+                Column(Modifier.padding(16.dp, 10.dp)) { Text("Line spacing: ${ls}%", style = MaterialTheme.typography.labelLarge); Slider(ls.toFloat(), { ls = it.toInt() }, valueRange = 110f..240f, onValueChangeFinished = { sp.edit().putInt("lineSpacing", ls).apply() }) }
+                PanelDivider()
+                var rules by remember { mutableStateOf(sp.getBoolean("rules", true)) }
+                SwitchRow("Ruled paper lines", rules, { rules = it; sp.edit().putBoolean("rules", it).apply() })
+                PanelDivider()
+                var mono by remember { mutableStateOf(sp.getBoolean("monoEditor", false)) }
+                SwitchRow("Typewriter font", mono, { mono = it; sp.edit().putBoolean("monoEditor", it).apply() }, subtitle = "Equal-width letters, good for code and tables")
+                PanelDivider()
+                var ac by remember { mutableStateOf(sp.getBoolean("autoCorrect", true)) }
+                SwitchRow("Keyboard autocorrect", ac, { ac = it; sp.edit().putBoolean("autoCorrect", it).apply() })
+                PanelDivider()
+                var caps by remember { mutableStateOf(sp.getBoolean("caps", true)) }
+                SwitchRow("Capitalise sentences", caps, { caps = it; sp.edit().putBoolean("caps", it).apply() })
+                PanelDivider()
+                var st by remember { mutableStateOf(sp.getBoolean("showStats", true)) }
+                SwitchRow("Show word count bar", st, { st = it; sp.edit().putBoolean("showStats", it).apply() })
+                PanelDivider()
+                var sd by remember { mutableIntStateOf(sp.getInt("saveDelay", 350)) }
+                Column(Modifier.padding(16.dp, 10.dp)) { Text("Save ${sd / 1000f} s after you stop typing", style = MaterialTheme.typography.labelLarge); Slider(sd.toFloat(), { sd = it.toInt() }, valueRange = 100f..3000f, onValueChangeFinished = { sp.edit().putInt("saveDelay", sd).apply() }) }
             }
         },
         menu = listOfNotNull(
@@ -409,7 +434,7 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
     LaunchedEffect(note.id) { if (note.title.isEmpty() && note.body.isEmpty()) runCatching { delay(150); titleFocus.requestFocus() } }
     LaunchedEffect(title, body.text) {
         if (title == current.title && body.text == current.body) return@LaunchedEffect
-        delay(350)
+        delay(context.prefs("scribble").getInt("saveDelay", 350).toLong())
         current = current.copy(title = title, body = body.text, updated = System.currentTimeMillis())
         onChange(current)
     }
@@ -464,7 +489,11 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                     cursorBrush = SolidColor(p.accent), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
                     decorationBox = { inner -> if (title.isEmpty()) Text("Title", style = MaterialTheme.typography.headlineSmall, color = p.secondaryText.copy(alpha = .6f)); inner() })
                 Text(DateUtils.formatDateTime(context, current.updated, DateUtils.FORMAT_SHOW_DATE or DateUtils.FORMAT_SHOW_TIME or DateUtils.FORMAT_SHOW_YEAR), style = MaterialTheme.typography.labelSmall, color = p.secondaryText, modifier = Modifier.padding(vertical = 6.dp))
-                val lineHeight = 26.sp
+                val sp = context.prefs("scribble")
+                val fontPx = sp.getInt("fontSize", 16)
+                val lineHeight = (fontPx * sp.getInt("lineSpacing", 160) / 100f).sp
+                val showRules = sp.getBoolean("rules", true)
+                val mono = sp.getBoolean("monoEditor", false)
                 val ruled = p.text.copy(alpha = if (p.dark) .08f else .07f)
                 if (preview) {
                     MarkdownView(body.text, onToggle = { line -> setBody(TextFieldValue(toggleLine(body.text, line))) }, onLink = onOpenLink, onReplace = { setBody(TextFieldValue(it)) })
@@ -480,12 +509,12 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                 }, Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).drawBehind {
                     val step = lineHeight.toPx()
                     var y = step - 2
-                    while (y < size.height) { drawLine(ruled, Offset(0f, y), Offset(size.width, y), 1.5f); y += step }
-                }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight), cursorBrush = SolidColor(p.accent),
-                    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
+                    if (showRules) while (y < size.height) { drawLine(ruled, Offset(0f, y), Offset(size.width, y), 1.5f); y += step }
+                }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent),
+                    keyboardOptions = KeyboardOptions(capitalization = if (sp.getBoolean("caps", true)) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, autoCorrect = sp.getBoolean("autoCorrect", true)),
                     decorationBox = { inner -> if (body.text.isEmpty()) Text("Start writing…", style = MaterialTheme.typography.bodyLarge, color = p.secondaryText.copy(alpha = .6f)); inner() })
             }
-            Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .7f)).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            if (context.prefs("scribble").getBoolean("showStats", true)) Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .7f)).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val words = current.copy(title = title, body = body.text).words
                 Text("$words word${if (words == 1) "" else "s"} · ${body.text.length} characters · ${(words / 220).coerceAtLeast(if (words > 0) 1 else 0)} min read",
                     style = MaterialTheme.typography.labelMedium, color = p.secondaryText, modifier = Modifier.weight(1f))

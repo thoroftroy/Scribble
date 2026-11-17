@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.5.14
+
+- New editor settings: text size, line spacing, ruled lines, typewriter font, autocorrect, capitalisation, word count bar and save delay
+
 ## v0.5.13
 
 - Loading screens now say what they are doing instead of showing a bare spinner
