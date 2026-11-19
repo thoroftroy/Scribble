@@ -1,5 +1,10 @@
 # Scribble changelog
 
+## v0.5.21
+
+- Tables now show as real tables while you edit, not just in preview. Tap a cell to type, tap the arrow on a heading to sort, align, add, move or delete columns, use the handle on a row to add, duplicate or delete it, and drag the handle to move the row. + Row and + Column are under the table
+- The folder tree is now the main view: a clear Folders, Cards, List switch under the filters, every folder open at first, a button on each folder to add a note or a folder inside it
+
 ## v0.5.20
 
 - New Insert menu in the editor: a table (you choose the rows and columns), a picture from your gallery (kept with the note and shown in preview), checklist item, heading, bulleted or numbered list, quote, code block, divider, note link, web link and the date and time

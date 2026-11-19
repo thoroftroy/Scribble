@@ -99,8 +99,9 @@ fun ScribbleApp() {
     var sortRecent by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("sortRecent", true)) }
     var templates by remember { mutableStateOf(false) }
     var listMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("viewList", false)) }
-    var treeMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("viewTree", false)) }
+    var treeMode by rememberSaveable { mutableStateOf(context.prefs("scribble").getBoolean("viewTree", true)) }
     val expanded = remember { mutableStateListOf<String>() }
+    val treeSeeded = remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     var loaded by remember { mutableStateOf(false) }
     val externals = remember { mutableStateListOf<Note>() }
@@ -178,6 +179,7 @@ fun ScribbleApp() {
         return
     }
     var newFolder by remember { mutableStateOf(false) }
+    var subFolderOf by remember { mutableStateOf<String?>(null) }
     var allFilesGuide by remember { mutableStateOf(false) }
     if (allFilesGuide) AccessGuide(SpecialAccess.Kind.ALL_FILES, "Scribble uses it to find text and Markdown documents anywhere on your phone and to save edits back into them. Nothing leaves your phone.",
         onDismiss = { allFilesGuide = false }, onGranted = { filter = "device" })
@@ -305,6 +307,13 @@ fun ScribbleApp() {
                     Chip("New folder", false, { newFolder = true }, WonderIcons.Add)
                     Chip("Trash", filter == "trash", { filter = "trash" }, WonderIcons.Delete)
                 }
+                if (filter != "trash" && filter != "device") Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text("View", style = MaterialTheme.typography.labelMedium, color = p.secondaryText)
+                    fun view(tree: Boolean, list: Boolean) { treeMode = tree; listMode = list; context.prefs("scribble").edit().putBoolean("viewList", list).putBoolean("viewTree", tree).apply() }
+                    Chip("Folders", treeMode, { view(true, false) }, WonderIcons.FolderOpen)
+                    Chip("Cards", !treeMode && !listMode, { view(false, false) }, WonderIcons.GridView)
+                    Chip("List", listMode && !treeMode, { view(false, true) }, WonderIcons.ViewList)
+                }
             }
             if (filter == "device") DeviceDocuments(query, needAccess = { allFilesGuide = true }) { path ->
                 scope.launch {
@@ -322,13 +331,17 @@ fun ScribbleApp() {
                 val all = shown.filter { it.trashed == 0L }
                 val paths = (all.map { it.folder }.filter { it.isNotBlank() } + folders).flatMap { f -> f.split('/').indices.map { k -> f.split('/').take(k + 1).joinToString("/") } }.distinct().sorted()
                 fun visible(path: String) = path.split('/').let { parts -> (1 until parts.size).all { k -> parts.take(k).joinToString("/") in expanded } }
+                if (!treeSeeded.value && paths.isNotEmpty()) { treeSeeded.value = true; expanded.addAll(paths) }
                 paths.filter { visible(it) }.forEach { path ->
                     val depth = path.count { it == '/' }
                     val open = path in expanded
                     item(key = "f:$path") {
                         ListRow(path.substringAfterLast('/'), Modifier.padding(start = (depth * 18).dp), subtitle = "${all.count { it.folder == path || it.folder.startsWith("$path/") }} notes",
                             icon = if (open) WonderIcons.FolderOpen else WonderIcons.Folder, tint = Color(0xFF4A90E2),
-                            trailing = { Icon(if (open) WonderIcons.ExpandLess else WonderIcons.ExpandMore, null, tint = p.secondaryText) },
+                            trailing = { Row(verticalAlignment = Alignment.CenterVertically) {
+                                androidx.compose.material3.IconButton(onClick = { val n = Note(folder = path); upsert(n); openId = n.id }) { Icon(WonderIcons.NoteAdd, "New note in ${path.substringAfterLast('/')}", tint = p.accent) }
+                                androidx.compose.material3.IconButton(onClick = { subFolderOf = path }) { Icon(WonderIcons.CreateNewFolder, "New folder inside", tint = p.accent) }
+                                Icon(if (open) WonderIcons.ExpandLess else WonderIcons.ExpandMore, null, tint = p.secondaryText) } },
                             onClick = { if (open) expanded.removeAll { it == path || it.startsWith("$path/") } else expanded.add(path) })
                     }
                     if (open) items(all.filter { it.folder == path }, key = { "n:" + it.id }) { n ->
@@ -369,8 +382,11 @@ fun ScribbleApp() {
             ListRow(name, subtitle = body.lineSequence().filter { it.isNotBlank() }.take(2).joinToString(" · ").take(60), icon = icon, tint = wonderPalette().accent, onClick = { templates = false; newNote(body, if (name == "Meeting") "Meeting " + java.time.LocalDate.now() else "") }) } }
     }, confirmButton = { TextButton(onClick = { templates = false }) { Text("Cancel") } })
     if (newFolder) InputDialog("New folder", "Folder name", confirm = "Create", onDismiss = { newFolder = false }) { name ->
-        folders = (folders + name).distinct(); store.saveFolders(folders); filter = "folder:$name"
+        folders = (folders + name).distinct(); store.saveFolders(folders); if (!treeMode) filter = "folder:$name" else expanded.add(name)
     }
+    subFolderOf?.let { parent -> InputDialog("New folder in ${parent.substringAfterLast('/')}", "Folder name", confirm = "Create", onDismiss = { subFolderOf = null }) { name ->
+        val full = "$parent/${name.trim('/')}"; folders = (folders + full).distinct(); store.saveFolders(folders); expanded.add(parent); expanded.add(full); subFolderOf = null
+    } }
     if (confirmEmpty) ConfirmDialog("Empty trash?", "Notes in the trash will be deleted permanently.", "Empty trash", onConfirm = {
         notes.filter { it.trashed > 0 }.forEach { n -> notes.remove(n); scope.launch(Dispatchers.IO) { store.deleteForever(n) } }
     }, onDismiss = { confirmEmpty = false }, danger = true)
@@ -559,17 +575,44 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                         Spacer(Modifier.height(24.dp)); SectionLabel("Linked from ${back.size} note${if (back.size == 1) "" else "s"}")
                         back.forEach { b -> Text("↩ " + b.displayTitle, Modifier.clickable { onOpenLink(b.displayTitle) }.padding(vertical = 6.dp), color = p.accent, style = MaterialTheme.typography.bodyLarge) }
                     }
-                } else BasicTextField(body, { v ->
-                    val cont = continueList(body.text, v.text, v.selection.start)
-                    val table = if (cont == null) convertPastedTable(body, v, context) else null
-                    if (cont != null) setBody(TextFieldValue(cont.first, TextRange(cont.second))) else if (table != null) setBody(table) else setBody(v)
-                }, Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).bringIntoViewRequester(bring).onFocusChanged { bodyFocused = it.isFocused }.drawBehind {
+                } else {
+                    val segs = remember(body.text) { splitSegments(body.text) }
+                    val onBody: (TextFieldValue) -> Unit = { v ->
+                        val cont = continueList(body.text, v.text, v.selection.start)
+                        val table = if (cont == null) convertPastedTable(body, v, context) else null
+                        if (cont != null) setBody(TextFieldValue(cont.first, TextRange(cont.second))) else if (table != null) setBody(table) else setBody(v)
+                    }
+                    if (segs.none { it.table }) BasicTextField(body, onBody, Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).bringIntoViewRequester(bring).onFocusChanged { bodyFocused = it.isFocused }.drawBehind {
                     val step = lineHeight.toPx()
                     var y = step - 2
                     if (showRules) while (y < size.height) { drawLine(ruled, Offset(0f, y), Offset(size.width, y), 1.5f); y += step }
                 }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent), onTextLayout = { bodyLayout = it },
                     keyboardOptions = KeyboardOptions(capitalization = if (sp.getBoolean("caps", true)) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, autoCorrect = sp.getBoolean("autoCorrect", true)),
                     decorationBox = { inner -> if (body.text.isEmpty()) Text("Start writing…", style = MaterialTheme.typography.bodyLarge, color = p.secondaryText.copy(alpha = .6f)); inner() })
+                    else Column(Modifier.fillMaxWidth()) {
+                        segs.forEachIndexed { i, sg ->
+                            val raw = body.text.substring(sg.start, sg.end)
+                            if (sg.table) TableEditor(raw.trimEnd('\n')) { md ->
+                                val keep = raw.length - raw.trimEnd('\n').length
+                                val nt = body.text.replaceRange(sg.start, sg.end, md + "\n".repeat(keep))
+                                setBody(TextFieldValue(nt, TextRange(body.selection.start.coerceAtMost(nt.length), body.selection.end.coerceAtMost(nt.length))))
+                            } else {
+                                val shown = if (i + 1 < segs.size && segs[i + 1].table) raw.removeSuffix("\n") else raw
+                                val inSeg = body.selection.start in sg.start..sg.end
+                                val local = if (inSeg) TextRange((body.selection.start - sg.start).coerceIn(0, shown.length), (body.selection.end - sg.start).coerceIn(0, shown.length)) else TextRange.Zero
+                                BasicTextField(TextFieldValue(shown, local), { v -> onBody(TextFieldValue(body.text.replaceRange(sg.start, sg.end, v.text + raw.substring(shown.length)), TextRange(sg.start + v.selection.start, sg.start + v.selection.end))) },
+                                    Modifier.fillMaxWidth().defaultMinSize(minHeight = if (i == segs.lastIndex) 240.dp else 30.dp).onFocusChanged { bodyFocused = it.isFocused }.drawBehind {
+                                        val step = lineHeight.toPx()
+                                        var y = step - 2
+                                        if (showRules) while (y < size.height) { drawLine(ruled, Offset(0f, y), Offset(size.width, y), 1.5f); y += step }
+                                    }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent), onTextLayout = { bodyLayout = it },
+                    keyboardOptions = KeyboardOptions(capitalization = if (sp.getBoolean("caps", true)) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, autoCorrect = sp.getBoolean("autoCorrect", true)),
+                    decorationBox = { inner -> if (false) Text("", style = MaterialTheme.typography.bodyLarge, color = p.secondaryText.copy(alpha = .6f)); inner() })
+
+                            }
+                        }
+                    }
+                }
             }
             if (bodyFocused && !preview && sp0.getBoolean("editorBar", true)) EditorBar(body, selecting, { selecting = it }, { setBody(it, snapshot = false) }, { pasteHere() }, { copySelection(it) }, anchor, { anchor = it })
             if (context.prefs("scribble").getBoolean("showStats", true)) Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .7f)).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
