@@ -7,9 +7,13 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -177,3 +181,75 @@ fun EditorBar(value: TextFieldValue, selecting: Boolean, onSelecting: (Boolean) 
         key("Paste") { onPaste() }
     }
 }
+
+/* ------------------------------------------------------------------ insert menu */
+
+/** Pictures added to notes live in the app, so they stay with the note. */
+object NoteImages {
+    fun dir(c: Context) = java.io.File(c.filesDir, "note-images").apply { mkdirs() }
+    fun file(c: Context, name: String) = java.io.File(dir(c), name.substringAfterLast('/'))
+
+    /** Copies a picked picture in, sized for reading on a phone, and returns the Markdown for it. */
+    fun add(c: Context, uri: android.net.Uri): String? = runCatching {
+        val o = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        c.contentResolver.openInputStream(uri)!!.use { android.graphics.BitmapFactory.decodeStream(it, null, o) }
+        var sample = 1; while (maxOf(o.outWidth, o.outHeight) / (sample * 2) >= 1600) sample *= 2
+        val bmp = c.contentResolver.openInputStream(uri)!!.use { android.graphics.BitmapFactory.decodeStream(it, null, android.graphics.BitmapFactory.Options().apply { inSampleSize = sample }) }!!
+        val name = "img-" + java.util.UUID.randomUUID().toString().take(8) + ".jpg"
+        file(c, name).outputStream().use { bmp.compress(android.graphics.Bitmap.CompressFormat.JPEG, 90, it) }
+        "![image](img:$name)"
+    }.getOrNull()
+}
+
+fun tableMarkdown(rows: Int, cols: Int): String {
+    val head = (1..cols).joinToString(" | ", "| ", " |") { "Column $it" }
+    val rule = "|" + " --- |".repeat(cols)
+    val body = (1 until rows).joinToString("\n") { "|" + "  |".repeat(cols) }
+    return "\n$head\n$rule\n$body\n"
+}
+
+@Composable
+fun InsertDialog(onDismiss: () -> Unit, onInsert: (String, Int?) -> Unit, onPickImage: () -> Unit) {
+    val p = wonderPalette()
+    var tablePicker by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    var rows by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(3) }
+    var cols by androidx.compose.runtime.remember { androidx.compose.runtime.mutableIntStateOf(3) }
+    val now = java.text.DateFormat.getDateTimeInstance(java.text.DateFormat.MEDIUM, java.text.DateFormat.SHORT).format(java.util.Date())
+    val items = listOf(
+        Triple("Table…", "Choose how many rows and columns", "table"),
+        Triple("Picture…", "From Memories or any gallery", "image"),
+        Triple("Checklist item", "- [ ] ", "- [ ] "),
+        Triple("Heading", "# ", "\n# "),
+        Triple("Bulleted list", "- ", "\n- "),
+        Triple("Numbered list", "1. ", "\n1. "),
+        Triple("Quote", "> ", "\n> "),
+        Triple("Code block", "```", "\n```\n\n```\n"),
+        Triple("Divider", "---", "\n---\n"),
+        Triple("Link to another note", "[[", "[[]]"),
+        Triple("Web link", "[text](https://)", "[text](https://)"),
+        Triple("Date and time", now, now),
+    )
+    dev.wonderdesk.shared.WonderDialog(onDismissRequest = onDismiss, title = { androidx.compose.material3.Text(if (tablePicker) "Table size" else "Insert") }, text = {
+        if (tablePicker) androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
+            androidx.compose.material3.Text("Rows (the first is the heading)", style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) { (2..10).forEach { n -> dev.wonderdesk.shared.Chip("$n", rows == n, { rows = n }) } }
+            androidx.compose.material3.Text("Columns", style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) { (2..6).forEach { n -> dev.wonderdesk.shared.Chip("$n", cols == n, { cols = n }) } }
+        } else androidx.compose.foundation.layout.Column(Modifier.androidx_vscroll()) {
+            dev.wonderdesk.shared.Panel {
+                items.forEachIndexed { i, (label, hint, ins) ->
+                    if (i > 0) dev.wonderdesk.shared.PanelDivider()
+                    dev.wonderdesk.shared.ListRow(label, subtitle = if (ins == "table" || ins == "image") hint else null, onClick = {
+                        when (ins) { "table" -> tablePicker = true; "image" -> { onDismiss(); onPickImage() }; else -> { onInsert(ins, null); onDismiss() } }
+                    })
+                }
+            }
+        }
+    }, confirmButton = {
+        if (tablePicker) androidx.compose.material3.TextButton(onClick = { onInsert(tableMarkdown(rows, cols), null); onDismiss() }) { androidx.compose.material3.Text("Insert") }
+        else androidx.compose.material3.TextButton(onClick = onDismiss) { androidx.compose.material3.Text("Cancel") }
+    })
+}
+
+@Composable
+private fun Modifier.androidx_vscroll(): Modifier = this.verticalScroll(rememberScrollState())

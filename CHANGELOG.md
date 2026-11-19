@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.5.20
+
+- New Insert menu in the editor: a table (you choose the rows and columns), a picture from your gallery (kept with the note and shown in preview), checklist item, heading, bulleted or numbered list, quote, code block, divider, note link, web link and the date and time
+
 ## v0.5.19
 
 - A row of cursor and selection buttons sits above the keyboard: move by letter, word or line, a Select switch that turns every move into extending a selection, select word, line or everything, and cut, copy and paste. Turn it off in Settings

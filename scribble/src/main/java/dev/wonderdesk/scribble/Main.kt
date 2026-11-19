@@ -457,6 +457,8 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
     var selecting by remember(note.id) { mutableStateOf(false) }
     var anchor by remember(note.id) { mutableIntStateOf(0) }
     var bodyFocused by remember { mutableStateOf(false) }
+    var insertOpen by remember { mutableStateOf(false) }
+    val insertScope = rememberCoroutineScope()
     val bodyScroll = rememberScrollState()
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
     var bodyLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
@@ -473,6 +475,13 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
         val now = System.currentTimeMillis()
         if (snapshot && v.text != body.text && (now - lastSnap > 800 || undo.isEmpty())) { undo.addLast(body); if (undo.size > 200) undo.removeFirst(); redo.clear(); lastSnap = now }
         body = v; tick++
+    }
+    fun insertText(t: String) {
+        val at = body.selection
+        setBody(TextFieldValue(body.text.replaceRange(at.min, at.max, t), TextRange(at.min + t.length)))
+    }
+    val imagePicker = rememberLauncherForActivityResult(ActivityResultContracts.PickVisualMedia()) { u ->
+        if (u != null) insertScope.launch { val md = withContext(Dispatchers.IO) { NoteImages.add(context, u) }; if (md != null) insertText("\n$md\n") }
     }
     fun pasteHere() {
         val clip = clipboardText(context) ?: return
@@ -506,11 +515,7 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
             ToolbarButton(WonderIcons.Undo, "Undo", { if (undo.isNotEmpty()) { redo.addLast(body); body = undo.removeLast(); tick++ } }, enabled = tick >= 0 && undo.isNotEmpty())
             ToolbarButton(WonderIcons.Redo, "Redo", { if (redo.isNotEmpty()) { undo.addLast(body); body = redo.removeLast(); tick++ } }, enabled = tick >= 0 && redo.isNotEmpty())
             ToolbarButton(if (preview) WonderIcons.Edit else WonderIcons.Visibility, if (preview) "Edit" else "Preview", { preview = !preview })
-            if (!preview) ToolbarButton(WonderIcons.GridView, "Insert table", {
-                val t = "\n| Column 1 | Column 2 | Column 3 |\n| --- | --- | --- |\n|  |  |  |\n|  |  |  |\n"
-                val at = body.selection.start.coerceIn(0, body.text.length)
-                setBody(TextFieldValue(body.text.substring(0, at) + t + body.text.substring(at), TextRange(at + t.indexOf("|  |") + 2)))
-            })
+            if (!preview) ToolbarButton(WonderIcons.Add, "Insert", { insertOpen = true })
             if (!preview) ToolbarButton(WonderIcons.CheckCircle, "Checklist item", {
                 val (t, c) = toggleCheck(body.text, body.selection.start); setBody(TextFieldValue(t, TextRange(c)))
             })
@@ -575,6 +580,7 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
             }
         }
     }
+    if (insertOpen) InsertDialog(onDismiss = { insertOpen = false }, onInsert = { t, _ -> insertText(t) }, onPickImage = { imagePicker.launch(androidx.activity.result.PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) })
     if (find) FindReplaceDialog(body.text, onDismiss = { find = false }) { setBody(TextFieldValue(it)) }
     if (colorMenu) WonderDialog(onDismissRequest = { colorMenu = false }, title = { Text("Paper colour") }, text = {
         val p = wonderPalette()
@@ -770,7 +776,9 @@ private fun MarkdownView(text: String, onToggle: (Int) -> Unit, onLink: (String)
                 MarkdownTable(lines.subList(i, end), p, onLink) { sorted -> onReplace((lines.subList(0, idx) + sorted + lines.subList(end, lines.size)).joinToString("\n")) }
                 i = end; continue
             }
+            val img = Regex("^!\\[(.*?)\\]\\(img:(.+?)\\)$").find(l)
             when {
+                img != null -> NoteImage(img.groupValues[2], img.groupValues[1])
                 l.startsWith("# ") -> Text(inline(l.drop(2), p), style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold), modifier = Modifier.padding(top = 8.dp))
                 l.startsWith("## ") -> Text(inline(l.drop(3), p), style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold), modifier = Modifier.padding(top = 6.dp))
                 l.startsWith("### ") -> Text(inline(l.drop(4), p), style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold))
@@ -895,3 +903,13 @@ private val TEMPLATES = listOf(
     Triple("Project", WonderIcons.Work, "## Goal\n\n## Tasks\n| Task | Who | Due |\n| --- | --- | --- |\n|  |  |  |\n\n## Notes\n"),
     Triple("Reading notes", WonderIcons.MenuBook, "**Book:** \n**Author:** \n\n## Key ideas\n- \n\n## Quotes\n> \n"),
 )
+
+@Composable
+private fun NoteImage(name: String, alt: String) {
+    val context = LocalContext.current
+    val bmp by produceState<androidx.compose.ui.graphics.ImageBitmap?>(null, name) { value = withContext(Dispatchers.IO) { runCatching { android.graphics.BitmapFactory.decodeFile(NoteImages.file(context, name).path)?.asImageBitmap() }.getOrNull() } }
+    val b = bmp
+    if (b != null) androidx.compose.foundation.Image(b, alt, Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(RoundedCornerShape(8.dp)), contentScale = androidx.compose.ui.layout.ContentScale.FillWidth)
+    else Text("[picture: $alt]", color = wonderPalette().secondaryText)
+}
+
