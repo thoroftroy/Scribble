@@ -50,6 +50,8 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.foundation.relocation.bringIntoViewRequester
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
@@ -240,6 +242,9 @@ fun ScribbleApp() {
                 SwitchRow("Capitalise sentences", caps, { caps = it; sp.edit().putBoolean("caps", it).apply() })
                 PanelDivider()
                 var st by remember { mutableStateOf(sp.getBoolean("showStats", true)) }
+                var eb by remember { mutableStateOf(sp.getBoolean("editorBar", true)) }
+                SwitchRow("Cursor and selection buttons", eb, { eb = it; sp.edit().putBoolean("editorBar", it).apply() }, subtitle = "A row above the keyboard to move by letter, word or line, select, copy and paste")
+                PanelDivider()
                 SwitchRow("Show word count bar", st, { st = it; sp.edit().putBoolean("showStats", it).apply() })
             }
             Panel(title = "Notes") {
@@ -432,6 +437,7 @@ private fun NoteCard(n: Note, store: NoteStore, onClick: () -> Unit, trash: Bool
 
 /* ------------------------------------------ text editor --------------------------------------- */
 
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
 @Composable
 private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, onOpenLink: (String) -> Unit, onChange: (Note) -> Unit, onClose: () -> Unit, onDelete: () -> Unit, onNewFolder: (String) -> Unit) {
     val context = LocalContext.current
@@ -448,6 +454,12 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
     var remind by remember { mutableStateOf(false) }
     var reminderAt by remember(note.id) { mutableLongStateOf(Reminders.at(context, note.id)) }
     var tick by remember { mutableIntStateOf(0) }
+    var selecting by remember(note.id) { mutableStateOf(false) }
+    var anchor by remember(note.id) { mutableIntStateOf(0) }
+    var bodyFocused by remember { mutableStateOf(false) }
+    val bodyScroll = rememberScrollState()
+    val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
+    var bodyLayout by remember { mutableStateOf<androidx.compose.ui.text.TextLayoutResult?>(null) }
     val titleFocus = remember { androidx.compose.ui.focus.FocusRequester() }
     LaunchedEffect(note.id) { if (note.title.isEmpty() && note.body.isEmpty()) runCatching { delay(150); titleFocus.requestFocus() } }
     LaunchedEffect(title, body.text) {
@@ -461,6 +473,26 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
         val now = System.currentTimeMillis()
         if (snapshot && v.text != body.text && (now - lastSnap > 800 || undo.isEmpty())) { undo.addLast(body); if (undo.size > 200) undo.removeFirst(); redo.clear(); lastSnap = now }
         body = v; tick++
+    }
+    fun pasteHere() {
+        val clip = clipboardText(context) ?: return
+        val at = body.selection
+        val merged = TextFieldValue(body.text.replaceRange(at.min, at.max, clip), TextRange(at.min + clip.length))
+        setBody(convertPastedTable(body, merged, context) ?: merged)
+    }
+    fun copySelection(cut: Boolean) {
+        val sel = body.selection
+        if (sel.collapsed) return
+        context.getSystemService(android.content.ClipboardManager::class.java).setPrimaryClip(android.content.ClipData.newPlainText("Scribble", body.text.substring(sel.min, sel.max)))
+        if (cut) setBody(TextFieldValue(body.text.removeRange(sel.min, sel.max), TextRange(sel.min)))
+    }
+    // Keep the cursor on screen as it moves, whether you type or use the arrow buttons.
+    LaunchedEffect(body.selection.end, body.text.length) {
+        val lay = bodyLayout ?: return@LaunchedEffect
+        if (!bodyFocused || body.text.isEmpty()) return@LaunchedEffect
+        val r = runCatching { lay.getCursorRect(body.selection.end.coerceIn(0, body.text.length)) }.getOrNull() ?: return@LaunchedEffect
+        // The field starts below the title; scroll so the cursor line sits inside the visible area.
+        bring.bringIntoView(androidx.compose.ui.geometry.Rect(r.left, r.top - 24f, r.right + 1f, r.bottom + 24f))
     }
     val exporter = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { uri ->
         if (uri != null) runCatching {
@@ -500,8 +532,9 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
         if (remind) ReminderDialog(current.id, title.ifBlank { current.displayTitle }, onDismiss = { remind = false; reminderAt = Reminders.at(context, current.id) }) { noteToast(it) }
         val p = wonderPalette()
         val bg = paper(current, p.dark)
+        val sp0 = context.prefs("scribble")
         Column(Modifier.fillMaxSize().background(bg)) {
-            Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 12.dp)) {
+            Column(Modifier.weight(1f).verticalScroll(bodyScroll).padding(horizontal = 20.dp, vertical = 12.dp)) {
                 BasicTextField(title, { title = it.take(200).replace("\n", "") }, Modifier.fillMaxWidth().focusRequester(titleFocus),
                     textStyle = MaterialTheme.typography.headlineSmall.copy(color = p.text, fontWeight = FontWeight.SemiBold),
                     cursorBrush = SolidColor(p.accent), keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences),
@@ -523,15 +556,17 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                     }
                 } else BasicTextField(body, { v ->
                     val cont = continueList(body.text, v.text, v.selection.start)
-                    if (cont != null) setBody(TextFieldValue(cont.first, TextRange(cont.second))) else setBody(v)
-                }, Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).drawBehind {
+                    val table = if (cont == null) convertPastedTable(body, v, context) else null
+                    if (cont != null) setBody(TextFieldValue(cont.first, TextRange(cont.second))) else if (table != null) setBody(table) else setBody(v)
+                }, Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).bringIntoViewRequester(bring).onFocusChanged { bodyFocused = it.isFocused }.drawBehind {
                     val step = lineHeight.toPx()
                     var y = step - 2
                     if (showRules) while (y < size.height) { drawLine(ruled, Offset(0f, y), Offset(size.width, y), 1.5f); y += step }
-                }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent),
+                }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent), onTextLayout = { bodyLayout = it },
                     keyboardOptions = KeyboardOptions(capitalization = if (sp.getBoolean("caps", true)) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, autoCorrect = sp.getBoolean("autoCorrect", true)),
                     decorationBox = { inner -> if (body.text.isEmpty()) Text("Start writing…", style = MaterialTheme.typography.bodyLarge, color = p.secondaryText.copy(alpha = .6f)); inner() })
             }
+            if (bodyFocused && !preview && sp0.getBoolean("editorBar", true)) EditorBar(body, selecting, { selecting = it }, { setBody(it, snapshot = false) }, { pasteHere() }, { copySelection(it) }, anchor, { anchor = it })
             if (context.prefs("scribble").getBoolean("showStats", true)) Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .7f)).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val words = current.copy(title = title, body = body.text).words
                 Text("$words word${if (words == 1) "" else "s"} · ${body.text.length} characters · ${(words / 220).coerceAtLeast(if (words > 0) 1 else 0)} min read",
@@ -729,8 +764,9 @@ private fun MarkdownView(text: String, onToggle: (Int) -> Unit, onLink: (String)
             if (inCode) { Text(raw, Modifier.fillMaxWidth().background(p.window).padding(horizontal = 8.dp), style = MaterialTheme.typography.bodyMedium.copy(fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace)); i++; continue }
             val l = raw.trimStart()
             // A Markdown table: consecutive lines starting with |.
-            if (l.startsWith("|")) {
-                var end = i; while (end < lines.size && lines[end].trimStart().startsWith("|")) end++
+            val nextIsRule = i + 1 < lines.size && lines[i + 1].contains('|') && lines[i + 1].trim().trim('|').split("|").all { it.trim().matches(Regex(":?-{2,}:?")) }
+            if (l.startsWith("|") || (l.contains('|') && nextIsRule)) {
+                var end = i; while (end < lines.size && lines[end].isNotBlank() && lines[end].contains('|') && (end == i || lines[end].trimStart().startsWith("|") || l.startsWith("|").not())) end++
                 MarkdownTable(lines.subList(i, end), p, onLink) { sorted -> onReplace((lines.subList(0, idx) + sorted + lines.subList(end, lines.size)).joinToString("\n")) }
                 i = end; continue
             }
@@ -757,7 +793,8 @@ private fun MarkdownView(text: String, onToggle: (Int) -> Unit, onLink: (String)
 }
 
 /** Splits a table row into its cells. */
-private fun cells(row: String) = row.trim().removePrefix("|").removeSuffix("|").split("|").map { it.trim() }
+private fun cells(row: String) = row.trim().removePrefix("|").let { if (it.endsWith("|") && !it.endsWith("\\|")) it.dropLast(1) else it }
+    .split(Regex("(?<!\\\\)\\|")).map { it.trim().replace("\\|", "|").replace(Regex("<br\\s*/?>", RegexOption.IGNORE_CASE), "\n") }
 
 /** A Markdown table drawn as a real grid. Tap a column heading to sort by it (again to reverse); the note is updated too. */
 @Composable

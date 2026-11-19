@@ -1,5 +1,12 @@
 # Scribble changelog
 
+## v0.5.19
+
+- A row of cursor and selection buttons sits above the keyboard: move by letter, word or line, a Select switch that turns every move into extending a selection, select word, line or everything, and cut, copy and paste. Turn it off in Settings
+- The cursor now stays on screen as you move it or type at the bottom of a long note
+- Tables copied from Obsidian, web pages and spreadsheets paste as real Markdown tables, including rendered tables (tab separated or HTML) and tables written without the outer pipes
+- Tables in preview cope with escaped pipes, line breaks inside cells and rows without the outer pipes
+
 ## v0.5.18
 
 - Settings are grouped under clear headings: text, typing and notes
