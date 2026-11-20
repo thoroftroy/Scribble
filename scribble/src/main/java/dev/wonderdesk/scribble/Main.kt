@@ -146,6 +146,12 @@ fun ScribbleApp() {
         MainActivity.pendingIntent.value = null
         intent?.getStringExtra("open")?.let { id -> if (notes.any { it.id == id }) openId = id }
         if (intent?.getBooleanExtra("new", false) == true) newNote()
+        // Another Wonderdesk app (Ripple's notepads) asks to edit a file in place.
+        intent?.getStringExtra("path")?.let { p ->
+            val doc = if (Documents.canEditAll()) Documents.open(p) else null
+            if (doc != null) { externals.removeAll { it.id == doc.id }; externals.add(doc); openId = doc.id }
+            else toast.value("Allow all files access in Scribble's settings to edit shared notepads")
+        }
         when (intent?.action) {
             Intent.ACTION_SEND -> intent.getStringExtra(Intent.EXTRA_TEXT)?.let { newNote(it.take(1_000_000), intent.getStringExtra(Intent.EXTRA_SUBJECT).orEmpty()) }
             Intent.ACTION_VIEW -> intent.data?.let { uri ->
@@ -181,13 +187,15 @@ fun ScribbleApp() {
     var newFolder by remember { mutableStateOf(false) }
     var subFolderOf by remember { mutableStateOf<String?>(null) }
     var allFilesGuide by remember { mutableStateOf(false) }
+    var vaultSheet by remember { mutableStateOf(false) }
+    var wholePhoneAsk by remember { mutableStateOf(false) }
     if (allFilesGuide) AccessGuide(SpecialAccess.Kind.ALL_FILES, "Scribble uses it to find text and Markdown documents anywhere on your phone and to save edits back into them. Nothing leaves your phone.",
         onDismiss = { allFilesGuide = false }, onGranted = { filter = "device" })
     var confirmEmpty by remember { mutableStateOf(false) }
-    fun reloadFrom(tree: android.net.Uri?) {
+    fun reloadFrom(tree: android.net.Uri?, vault: Vault? = null, wholePhone: Boolean = false) {
         loaded = false
         scope.launch {
-            val list = withContext(Dispatchers.IO) { store.useFolder(tree); store.all() to store.folders() }
+            val list = withContext(Dispatchers.IO) { if (wholePhone) store.useWholePhone() else if (vault != null) store.useVault(vault) else store.useFolder(tree); store.all() to store.folders() }
             notes.clear(); notes.addAll(list.first); folders = list.second; filter = "all"; loaded = true
             NotepadWidget.refresh(context)
         }
@@ -195,6 +203,23 @@ fun ScribbleApp() {
     val folderPicker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { t ->
         if (t != null) { runCatching { context.contentResolver.takePersistableUriPermission(t, Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION) }; reloadFrom(t) }
     }
+    if (vaultSheet) WonderDialog(onDismissRequest = { vaultSheet = false }, title = { Text("Open a folder as a vault") }, text = {
+        Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text("A vault is any folder of notes. Its sub-folders show as a tree, like Obsidian.", style = MaterialTheme.typography.bodySmall, color = wonderPalette().secondaryText)
+            Panel {
+                ListRow("Open a folder…", subtitle = "Pick any folder on this phone", icon = WonderIcons.FolderOpen, tint = Color(0xFF2E9E44), chevron = true, onClick = { vaultSheet = false; folderPicker.launch(null) }); PanelDivider()
+                ListRow("Whole phone", subtitle = if (Documents.canEditAll()) "Every note and text file on this phone as one tree" else "Needs all files access", icon = WonderIcons.PhoneAndroid, tint = Color(0xFF16A085), chevron = true,
+                    onClick = { vaultSheet = false; if (Documents.canEditAll()) reloadFrom(null, wholePhone = true) else wholePhoneAsk = true }); PanelDivider()
+                ListRow("Private to Scribble", subtitle = "Notes kept inside the app", icon = WonderIcons.Lock, tint = Color(0xFF7A7F87), onClick = { vaultSheet = false; reloadFrom(null) })
+            }
+            val recent = store.vaults()
+            if (recent.isNotEmpty()) {
+                Text("Recent", style = MaterialTheme.typography.labelMedium, color = wonderPalette().secondaryText)
+                Panel { recent.forEachIndexed { i, v -> if (i > 0) PanelDivider(); ListRow(v.label, subtitle = if (v.tree.isEmpty()) "Whole phone" else v.path.ifBlank { "Folder" }, icon = WonderIcons.Folder, tint = Color(0xFF4A90E2), onClick = { vaultSheet = false; reloadFrom(null, vault = v) }) } }
+            }
+        }
+    }, confirmButton = { TextButton(onClick = { vaultSheet = false }) { Text("Close") } })
+    if (wholePhoneAsk) AccessGuide(SpecialAccess.Kind.ALL_FILES, "Opening the whole phone as one vault needs all files access. Nothing leaves your phone.", onDismiss = { wholePhoneAsk = false }, onGranted = { wholePhoneAsk = false; reloadFrom(null, wholePhone = true) })
     WonderApp(needs = APP_NEEDS, 
         appName = "Scribble", about = ABOUT,
         title = when { filter == "pinned" -> "Pinned"; filter == "device" -> "On this phone"; filter == "trash" -> "Trash"; filter.startsWith("folder:") -> filter.removePrefix("folder:"); else -> "Scribble" },
@@ -299,6 +324,14 @@ fun ScribbleApp() {
         Column(Modifier.fillMaxSize()) {
             Column(Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 SearchField(query, { query = it }, "Search notes")
+                Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).clickable { vaultSheet = true }.background(p.accent.copy(alpha = .10f)).padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    androidx.compose.material3.Icon(WonderIcons.FolderOpen, null, tint = p.accent)
+                    Column(Modifier.padding(start = 10.dp).weight(1f)) {
+                        Text(store.fs.label, style = MaterialTheme.typography.titleSmall, maxLines = 1)
+                        Text(if (store.usesSharedFolder) "Open folder · tap to switch or open another" else "Private to Scribble · tap to open any folder", style = MaterialTheme.typography.bodySmall, color = p.secondaryText, maxLines = 1)
+                    }
+                    androidx.compose.material3.Icon(WonderIcons.ExpandMore, null, tint = p.secondaryText)
+                }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("All notes", filter == "all", { filter = "all" }, WonderIcons.Notes)
                     Chip("Pinned", filter == "pinned", { filter = "pinned" }, WonderIcons.PushPin)

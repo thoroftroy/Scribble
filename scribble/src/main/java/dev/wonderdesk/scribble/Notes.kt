@@ -42,6 +42,8 @@ fun isDone(l: String) = l.trimStart().let { it.startsWith("☑ ") || it.startsWi
 
 /* ------------------------------------------- where notes live -------------------------------------------- */
 
+data class Vault(val label: String, val tree: String, val path: String)
+
 /** A folder of notes: the app's private folder, or any folder the user picked (for example an Obsidian vault). */
 interface Fs {
     val label: String
@@ -57,11 +59,11 @@ interface Fs {
 private val SKIP = setOf(".scribble", ".obsidian", ".trash", ".git")
 val NOTE_EXT = setOf("md", "markdown", "txt")
 
-class FileFs(private val root: File, override val label: String) : Fs {
+class FileFs(private val root: File, override val label: String, private val skip: Set<String> = SKIP) : Fs {
     init { root.mkdirs() }
-    override fun walk(): List<Pair<String, Long>> = root.walkTopDown().onEnter { it == root || it.name !in SKIP }.filter { it.isFile }
+    override fun walk(): List<Pair<String, Long>> = root.walkTopDown().onEnter { it == root || it.name !in skip }.filter { it.isFile }
         .map { it.relativeTo(root).path to it.lastModified() }.toList()
-    override fun dirs() = root.walkTopDown().onEnter { it == root || it.name !in SKIP }.filter { it.isDirectory && it != root }.map { it.relativeTo(root).path }.toList()
+    override fun dirs() = root.walkTopDown().onEnter { it == root || it.name !in skip }.filter { it.isDirectory && it != root }.map { it.relativeTo(root).path }.toList()
     override fun read(path: String) = runCatching { File(root, path).readBytes() }.getOrNull()
     override fun write(path: String, data: ByteArray) { val f = File(root, path); f.parentFile?.mkdirs(); val t = File(f.path + ".tmp"); t.writeBytes(data); t.renameTo(f) }
     override fun delete(path: String) { File(root, path).delete() }
@@ -119,7 +121,14 @@ class NoteStore(private val context: Context) {
         if (prefs.all["tree"] is Boolean) prefs.edit().remove("tree").apply()
         if (prefs.all["list"] is Boolean) prefs.edit().remove("list").apply()
         // With all-files access, a folder on the phone is read directly, which is far faster than through the picker.
-        prefs.getString("path", null)?.let { p -> val f = File(p); if (android.os.Environment.isExternalStorageManager() && f.isDirectory) return FileFs(f, f.name) }
+        prefs.getString("path", null)?.let { p ->
+            val f = File(p)
+            if (android.os.Environment.isExternalStorageManager() && f.isDirectory) {
+                val whole = f == android.os.Environment.getExternalStorageDirectory()
+                // The whole phone: skip app data and media folders so it stays quick.
+                return if (whole) FileFs(f, "Whole phone", SKIP + setOf("Android", "DCIM", "Pictures", "Movies", "Music", "Alarms", "Ringtones", "Notifications", "Podcasts", "Audiobooks")) else FileFs(f, f.name)
+            }
+        }
         return prefs.getString("tree", null)?.let { t -> runCatching { SafFs(context, Uri.parse(t)) }.getOrNull() }
             ?: FileFs(File(context.filesDir, "vault"), "On this phone")
     }
@@ -132,6 +141,29 @@ class NoteStore(private val context: Context) {
             if (tree == null) { remove("tree"); remove("path") } else { putString("tree", tree.toString()); if (path != null) putString("path", path) else remove("path") }
         }.apply()
         fs = openFs(); indexLoaded = false
+        if (tree != null) rememberVault(Vault(fs.label, tree.toString(), path.orEmpty()))
+    }
+
+    /** Opens the whole phone's storage as one vault (needs all files access). */
+    fun useWholePhone() {
+        prefs.edit().remove("tree").putString("path", android.os.Environment.getExternalStorageDirectory().path).apply()
+        fs = openFs(); indexLoaded = false
+        rememberVault(Vault("Whole phone", "", android.os.Environment.getExternalStorageDirectory().path))
+    }
+
+    /** Switches to a vault opened before. */
+    fun useVault(v: Vault) {
+        if (v.tree.isNotEmpty()) useFolder(Uri.parse(v.tree)) else useWholePhone()
+    }
+
+    /** Folders opened as vaults before, most recent first, so switching is one tap. */
+    fun vaults(): List<Vault> = runCatching {
+        val a = JSONArray(prefs.getString("vaults", "[]")); (0 until a.length()).map { val o = a.getJSONObject(it); Vault(o.getString("label"), o.getString("tree"), o.optString("path")) }
+    }.getOrDefault(emptyList())
+
+    private fun rememberVault(v: Vault) {
+        val all = (listOf(v) + vaults().filter { it.tree != v.tree || it.path != v.path }).take(8)
+        prefs.edit().putString("vaults", JSONArray().apply { all.forEach { put(JSONObject().put("label", it.label).put("tree", it.tree).put("path", it.path)) } }.toString()).apply()
     }
 
     private fun loadIndex() { index = runCatching { JSONObject(String(fs.read(".scribble/index.json")!!)) }.getOrDefault(JSONObject()) }

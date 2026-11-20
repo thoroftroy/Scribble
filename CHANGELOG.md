@@ -1,5 +1,14 @@
 # Scribble changelog
 
+## v0.6.1
+
+- Can open a file by path when another Wonderdesk app asks, so Ripple notepads edit straight in Scribble
+
+## v0.6.0
+
+- Open any folder as a vault from the top of the main screen: pick a folder, switch between recent ones, or open the whole phone as one tree. Sub-folders show as a tree like Obsidian
+- The folder choice is no longer buried in Settings
+
 ## v0.5.21
 
 - Tables now show as real tables while you edit, not just in preview. Tap a cell to type, tap the arrow on a heading to sort, align, add, move or delete columns, use the handle on a row to add, duplicate or delete it, and drag the handle to move the row. + Row and + Column are under the table
