@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.6.2
+
+- Fixed a gap above the keyboard in screens with a bottom tab bar: the tab bar now steps aside while you type, so you can see what you are writing
+
 ## v0.6.1
 
 - Can open a file by path when another Wonderdesk app asks, so Ripple notepads edit straight in Scribble
