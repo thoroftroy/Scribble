@@ -213,15 +213,27 @@ fun ScribbleApp() {
                 ListRow("Private to Scribble", subtitle = "Notes kept inside the app", icon = WonderIcons.Lock, tint = Color(0xFF7A7F87), onClick = { vaultSheet = false; reloadFrom(null) }, help = "Notes live in Scribble's own folder, which other apps can't see.")
             }
             // Obsidian vaults on this phone, found for you: one tap to open.
-            val found by produceState<List<java.io.File>?>(null, vaultSheet) { value = if (Documents.canEditAll()) withContext(Dispatchers.IO) { store.findObsidianVaults() } else emptyList() }
+            // The search says what it is doing as it goes: which folder it is in, how many it has looked through, and each vault the moment it is found.
+            var scanning by remember { mutableStateOf(true) }
+            var checked by remember { mutableIntStateOf(0) }
+            var scanFolder by remember { mutableStateOf("") }
+            var liveFound by remember { mutableStateOf<List<java.io.File>>(emptyList()) }
+            LaunchedEffect(vaultSheet) {
+                if (!Documents.canEditAll()) { scanning = false; return@LaunchedEffect }
+                scanning = true; checked = 0; liveFound = emptyList()
+                withContext(Dispatchers.IO) { store.findObsidianVaults { name, n, fnd -> scanFolder = name; checked = n; liveFound = fnd } }
+                scanning = false
+            }
+            val found: List<java.io.File>? = if (scanning && liveFound.isEmpty()) null else liveFound
             Text("Obsidian vaults", style = MaterialTheme.typography.labelMedium, color = wonderPalette().secondaryText)
             Panel {
                 if (!Documents.canEditAll()) ListRow("Find my Obsidian vaults", subtitle = "Needs all files access to look for them", icon = WonderIcons.Search, tint = Color(0xFF7C4DFF), chevron = true, onClick = { vaultSheet = false; wholePhoneAsk = true })
-                else if (found == null) ListRow("Looking for vaults…", icon = WonderIcons.Search, tint = Color(0xFF7C4DFF))
+                else if (found == null) ListRow("Looking for vaults…", subtitle = "Checked $checked folder${if (checked == 1) "" else "s"}" + if (scanFolder.isNotEmpty()) " · now in $scanFolder" else "", icon = WonderIcons.Search, tint = Color(0xFF7C4DFF))
                 else if (found!!.isEmpty()) ListRow("No Obsidian vaults found", subtitle = "Open its folder with “Open a folder…” above", icon = WonderIcons.Search, tint = Color(0xFF7C4DFF))
                 else found!!.forEachIndexed { i, f -> if (i > 0) PanelDivider(); ListRow(f.name, subtitle = f.path.removePrefix(android.os.Environment.getExternalStorageDirectory().path + "/"), icon = WonderIcons.Folder, tint = Color(0xFF7C4DFF), chevron = true,
                     onClick = { vaultSheet = false; reloadFrom(null, vault = Vault(f.name, "", f.path)) }) }
             }
+            if (scanning && liveFound.isNotEmpty()) Text("Still looking… checked $checked folders, ${liveFound.size} found so far", style = MaterialTheme.typography.bodySmall, color = wonderPalette().secondaryText)
             val recent = store.vaults()
             if (recent.isNotEmpty()) {
                 Text("Recent", style = MaterialTheme.typography.labelMedium, color = wonderPalette().secondaryText)
@@ -961,11 +973,15 @@ private fun DeviceDocuments(query: String, needAccess: () -> Unit, onOpen: (Stri
     val resumed = rememberIsResumed()
     var docs by remember { mutableStateOf<List<Documents.Doc>?>(null) }
     val access = remember(resumed) { Documents.canEditAll() }
-    LaunchedEffect(access, resumed) { if (access && resumed) docs = withContext(Dispatchers.IO) { Documents.list(context) } }
+    var foldersChecked by remember { mutableIntStateOf(0) }
+    var docsFound by remember { mutableIntStateOf(0) }
+    var nowIn by remember { mutableStateOf("") }
+    val scanStarted = remember { System.currentTimeMillis() }
+    LaunchedEffect(access, resumed) { if (access && resumed) docs = withContext(Dispatchers.IO) { Documents.list(context) { f, n, d -> nowIn = f; foldersChecked = n; docsFound = d } } }
     if (!access) { EmptyState("See every document on your phone", "Turn on all files access to browse and edit text and Markdown files anywhere on your phone, right where they are.",
         icon = WonderIcons.Description, action = { WButton("Turn on all files access", needAccess, icon = WonderIcons.Storage, kind = ButtonKind.Primary) }); return }
     val list = docs
-    if (list == null) { LoadingPane("Finding documents on this phone", detail = "Looking for text and Markdown files in every folder"); return }
+    if (list == null) { LoadingPane("Finding documents on this phone", detail = if (foldersChecked == 0) "Starting to look through your folders" else "Checked $foldersChecked folders · $docsFound documents found so far" + if (nowIn.isNotEmpty()) " · now in $nowIn" else "", startedAt = scanStarted); return }
     val shown = remember(list, query) { if (query.isBlank()) list else list.filter { it.name.contains(query, true) || it.folder.contains(query, true) } }
     if (shown.isEmpty()) { EmptyState(if (query.isBlank()) "No text documents found" else "No matches", if (query.isBlank()) "Text and Markdown files you save or download will show up here." else "No document name contains “$query”.", icon = WonderIcons.Description); return }
     androidx.compose.foundation.lazy.LazyColumn(Modifier.fillMaxSize(), state = rememberTabTopList(), contentPadding = PaddingValues(16.dp)) {

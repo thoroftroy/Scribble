@@ -165,12 +165,13 @@ class NoteStore(private val context: Context) {
     }
 
     /** Folders that are Obsidian vaults (they contain a .obsidian folder), found a few levels down in shared storage. Needs all files access. */
-    fun findObsidianVaults(): List<File> {
-        val out = ArrayList<File>()
+    fun findObsidianVaults(onProgress: (folder: String, checked: Int, found: List<File>) -> Unit = { _, _, _ -> }): List<File> {
+        val out = ArrayList<File>(); var checked = 0
         fun walk(d: File, depth: Int) {
             if (depth > 4 || out.size >= 20) return
+            checked++; onProgress(d.name.ifEmpty { "storage" }, checked, out.toList())
             val kids = d.listFiles() ?: return
-            if (kids.any { it.isDirectory && it.name == ".obsidian" }) { out += d; return }
+            if (kids.any { it.isDirectory && it.name == ".obsidian" }) { out += d; onProgress(d.name, checked, out.toList()); return }
             kids.filter { it.isDirectory && it.name != "Android" && it.name != "DCIM" && !it.name.startsWith(".") }.forEach { walk(it, depth + 1) }
         }
         runCatching { walk(android.os.Environment.getExternalStorageDirectory(), 0) }
@@ -357,11 +358,12 @@ object Documents {
      * Every text document on the phone, newest first. Android's media index rarely tracks text files,
      * so this walks storage directly (skipping Android/, hidden and app-cache folders).
      */
-    fun list(c: Context): List<Doc> {
-        val out = ArrayList<Doc>()
+    fun list(c: Context, onProgress: (folder: String, folders: Int, docs: Int) -> Unit = { _, _, _ -> }): List<Doc> {
+        val out = ArrayList<Doc>(); var folders = 0
         val roots = c.getSystemService(android.os.storage.StorageManager::class.java).storageVolumes.mapNotNull { it.directory }
         fun walk(d: File, depth: Int) {
             if (depth > 14 || out.size >= 5000) return
+            folders++; if (folders % 10 == 0) onProgress(d.name.ifEmpty { "storage" }, folders, out.size)
             val kids = d.listFiles() ?: return
             for (f in kids) {
                 val n = f.name

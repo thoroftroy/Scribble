@@ -1,5 +1,10 @@
 # Scribble changelog
 
+## v0.7.3
+
+- The animated background is now drawn directly on the screen at full sharpness instead of a small picture stretched up, so it is smooth and no longer looks pixelated; the grain over it is much subtler, and long tab names (like Feedback) shrink to fit instead of being cut off
+- Looking for Obsidian vaults and for documents on the phone now shows live progress: folders checked, what it has found so far and which folder it is in
+
 ## v0.7.2
 
 - At night the animated background gets a stronger wash, so text stays easy to read on dark scenes
