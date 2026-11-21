@@ -209,8 +209,18 @@ fun ScribbleApp() {
             Panel {
                 ListRow("Open a folder…", subtitle = "Pick any folder on this phone", icon = WonderIcons.FolderOpen, tint = Color(0xFF2E9E44), chevron = true, onClick = { vaultSheet = false; folderPicker.launch(null) }); PanelDivider()
                 ListRow("Whole phone", subtitle = if (Documents.canEditAll()) "Every note and text file on this phone as one tree" else "Needs all files access", icon = WonderIcons.PhoneAndroid, tint = Color(0xFF16A085), chevron = true,
-                    onClick = { vaultSheet = false; if (Documents.canEditAll()) reloadFrom(null, wholePhone = true) else wholePhoneAsk = true }); PanelDivider()
-                ListRow("Private to Scribble", subtitle = "Notes kept inside the app", icon = WonderIcons.Lock, tint = Color(0xFF7A7F87), onClick = { vaultSheet = false; reloadFrom(null) })
+                    onClick = { vaultSheet = false; if (Documents.canEditAll()) reloadFrom(null, wholePhone = true) else wholePhoneAsk = true }, help = "Lets Scribble open any folder on the phone as a notes vault, like Obsidian."); PanelDivider()
+                ListRow("Private to Scribble", subtitle = "Notes kept inside the app", icon = WonderIcons.Lock, tint = Color(0xFF7A7F87), onClick = { vaultSheet = false; reloadFrom(null) }, help = "Notes live in Scribble's own folder, which other apps can't see.")
+            }
+            // Obsidian vaults on this phone, found for you: one tap to open.
+            val found by produceState<List<java.io.File>?>(null, vaultSheet) { value = if (Documents.canEditAll()) withContext(Dispatchers.IO) { store.findObsidianVaults() } else emptyList() }
+            Text("Obsidian vaults", style = MaterialTheme.typography.labelMedium, color = wonderPalette().secondaryText)
+            Panel {
+                if (!Documents.canEditAll()) ListRow("Find my Obsidian vaults", subtitle = "Needs all files access to look for them", icon = WonderIcons.Search, tint = Color(0xFF7C4DFF), chevron = true, onClick = { vaultSheet = false; wholePhoneAsk = true })
+                else if (found == null) ListRow("Looking for vaults…", icon = WonderIcons.Search, tint = Color(0xFF7C4DFF))
+                else if (found!!.isEmpty()) ListRow("No Obsidian vaults found", subtitle = "Open its folder with “Open a folder…” above", icon = WonderIcons.Search, tint = Color(0xFF7C4DFF))
+                else found!!.forEachIndexed { i, f -> if (i > 0) PanelDivider(); ListRow(f.name, subtitle = f.path.removePrefix(android.os.Environment.getExternalStorageDirectory().path + "/"), icon = WonderIcons.Folder, tint = Color(0xFF7C4DFF), chevron = true,
+                    onClick = { vaultSheet = false; reloadFrom(null, vault = Vault(f.name, "", f.path)) }) }
             }
             val recent = store.vaults()
             if (recent.isNotEmpty()) {
@@ -242,11 +252,11 @@ fun ScribbleApp() {
                 if (store.usesSharedFolder) { PanelDivider(); ListRow("Go back to the private folder", icon = WonderIcons.Lock, tint = Color(0xFF7A7F87), onClick = { reloadFrom(null) }) }
             }
             Panel(title = "Documents on this phone", footer = "With all files access, Scribble lists every text and Markdown file on your phone and saves your edits straight into the original file.") {
-                SwitchRow("All files access", Documents.canEditAll(), { allFilesGuide = true }, icon = WonderIcons.Storage, tint = Color(0xFF16A085))
+                SwitchRow("All files access", Documents.canEditAll(), { allFilesGuide = true }, icon = WonderIcons.Storage, tint = Color(0xFF16A085), help = "Needed to open folders outside Scribble's own.")
             }
             Panel(title = "Editor") {
                 var pv by remember { mutableStateOf(store.prefs.getBoolean("openInPreview", false)) }
-                SwitchRow("Open notes in preview", pv, { pv = it; store.prefs.edit().putBoolean("openInPreview", it).apply() }, subtitle = "Show formatted Markdown first; tap Edit to change it")
+                SwitchRow("Open notes in preview", pv, { pv = it; store.prefs.edit().putBoolean("openInPreview", it).apply() }, subtitle = "Show formatted Markdown first; tap Edit to change it", help = "Opens notes as formatted text first; tap to edit.")
             }
             Panel(title = "Text") {
                 var fs by remember { mutableIntStateOf(sp.getInt("fontSize", 16)) }

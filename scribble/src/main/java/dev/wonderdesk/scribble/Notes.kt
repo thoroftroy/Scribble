@@ -151,9 +151,30 @@ class NoteStore(private val context: Context) {
         rememberVault(Vault("Whole phone", "", android.os.Environment.getExternalStorageDirectory().path))
     }
 
+    /** Opens one folder by its path as a vault (needs all files access). */
+    fun useFolderPath(f: File) {
+        prefs.edit().remove("tree").putString("path", f.path).apply()
+        fs = openFs(); indexLoaded = false
+        rememberVault(Vault(f.name, "", f.path))
+    }
+
     /** Switches to a vault opened before. */
     fun useVault(v: Vault) {
-        if (v.tree.isNotEmpty()) useFolder(Uri.parse(v.tree)) else useWholePhone()
+        val root = android.os.Environment.getExternalStorageDirectory().path
+        if (v.tree.isNotEmpty()) useFolder(Uri.parse(v.tree)) else if (v.path.isNotEmpty() && v.path != root) useFolderPath(File(v.path)) else useWholePhone()
+    }
+
+    /** Folders that are Obsidian vaults (they contain a .obsidian folder), found a few levels down in shared storage. Needs all files access. */
+    fun findObsidianVaults(): List<File> {
+        val out = ArrayList<File>()
+        fun walk(d: File, depth: Int) {
+            if (depth > 4 || out.size >= 20) return
+            val kids = d.listFiles() ?: return
+            if (kids.any { it.isDirectory && it.name == ".obsidian" }) { out += d; return }
+            kids.filter { it.isDirectory && it.name != "Android" && it.name != "DCIM" && !it.name.startsWith(".") }.forEach { walk(it, depth + 1) }
+        }
+        runCatching { walk(android.os.Environment.getExternalStorageDirectory(), 0) }
+        return out
     }
 
     /** Folders opened as vaults before, most recent first, so switching is one tap. */
