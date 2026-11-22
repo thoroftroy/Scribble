@@ -580,6 +580,11 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
         }
     }
     var preview by rememberSaveable(note.id) { mutableStateOf(note.body.isNotBlank() && context.prefs("scribble").getBoolean("openInPreview", false)) }
+    // Writing: the scene slows right down so it never pulls at your eye, and every hundred words you add gets a small burst.
+    SceneMoodEffect(SceneMood(energy = .4f, glyphs = listOf("✎", "¶", "•", "·")))
+    val hundreds = remember(body.text) { body.text.split(Regex("\\s+")).count { it.isNotBlank() } / 100 }
+    var bestHundreds by remember(note.id) { mutableIntStateOf(hundreds) }
+    LaunchedEffect(hundreds) { if (hundreds > bestHundreds) { bestHundreds = hundreds; WonderMood.celebrate(listOf("${hundreds * 100}", "✎", "✦")) } }
     WonderApp(
         appName = "Scribble", about = ABOUT, title = "", onBack = onClose,
         actions = {
@@ -774,6 +779,7 @@ private fun SketchEditor(note: Note, store: NoteStore, onChangeLocal: (Note) -> 
         onChangeLocal(n)
         scope.launch(Dispatchers.IO) { store.sketchFile(n).outputStream().use { bmp.compress(Bitmap.CompressFormat.PNG, 100, it) }; store.commitSketch(n) }
     }
+    SceneMoodEffect(SceneMood(energy = .6f, glyphs = listOf("✏", "~", "•", "◌")))
     WonderApp(
         appName = "Scribble", about = ABOUT, title = "", onBack = { persist(); onClose() },
         actions = {

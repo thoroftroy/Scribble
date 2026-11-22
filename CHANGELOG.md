@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.8.0
+
+- While you write, the background slows right down so it never pulls at your eye, and every hundred words you add gets a small burst. Sketching has its own pencil symbols
+
 ## v0.7.4
 
 - The symbols drifting in the background are smaller and fainter so they no longer crowd text; selected segments and chips are readable in every look (including Super); the warning banner at the top has a solid backing so its text is easy to read
