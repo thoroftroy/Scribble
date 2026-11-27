@@ -621,7 +621,8 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
         val p = wonderPalette()
         val bg = paper(current, p.dark)
         val sp0 = context.prefs("scribble")
-        Column(Modifier.fillMaxSize().background(bg)) {
+        // The paper is a little see-through, so the scene behind (and the letters you type floating up in it) shows faintly.
+        Column(Modifier.fillMaxSize().background(bg.copy(alpha = .8f))) {
             Column(Modifier.weight(1f).verticalScroll(bodyScroll).padding(horizontal = 20.dp, vertical = 12.dp)) {
                 BasicTextField(title, { title = it.take(200).replace("\n", "") }, Modifier.fillMaxWidth().focusRequester(titleFocus),
                     textStyle = MaterialTheme.typography.headlineSmall.copy(color = p.text, fontWeight = FontWeight.SemiBold),

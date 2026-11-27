@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.9.1
+
+- While you write, the note's paper is a little see-through, so the background shows faintly and the letters you type float up where you can see them (they used to start behind the keyboard)
+
 ## v0.9.0
 
 - The letters you type float up through the background and fade, and the pages drift faster while you write
