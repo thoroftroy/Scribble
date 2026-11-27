@@ -585,6 +585,13 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
     val hundreds = remember(body.text) { body.text.split(Regex("\\s+")).count { it.isNotBlank() } / 100 }
     var bestHundreds by remember(note.id) { mutableIntStateOf(hundreds) }
     LaunchedEffect(hundreds) { if (hundreds > bestHundreds) { bestHundreds = hundreds; WonderMood.celebrate(listOf("${hundreds * 100}", "✎", "✦")) } }
+    // Each letter you type floats up through the scene and fades, and the pages drift faster while you are writing.
+    var lastLen by remember(note.id) { mutableIntStateOf(body.text.length) }
+    LaunchedEffect(body.text) {
+        val txt = body.text
+        if (txt.length == lastLen + 1) { val at = (body.selection.start - 1).coerceIn(0, txt.length - 1); SceneFeed.typed(txt[at]) }
+        lastLen = txt.length
+    }
     WonderApp(
         appName = "Scribble", about = ABOUT, title = "", onBack = onClose,
         actions = {
