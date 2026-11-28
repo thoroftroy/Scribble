@@ -169,15 +169,19 @@ fun ScribbleApp() {
                 .onFailure { toast.value(it.message ?: "Couldn't read that file") }
         }
     }
+    val linkTrail = remember { mutableStateListOf<String>() }
+    LaunchedEffect(openId) { if (openId == null) linkTrail.clear() }
     val open = openId?.let { id -> notes.find { it.id == id } ?: externals.find { it.id == id } }
     if (open != null) {
         if (open.sketch) SketchEditor(open, store, onChangeLocal = { n -> val i = notes.indexOfFirst { it.id == n.id }; if (i >= 0) notes[i] = n }, onClose = { openId = null }, onDelete = { upsert(open.copy(trashed = System.currentTimeMillis())); openId = null })
         else NoteEditor(open, folders, notes, onOpenLink = { t ->
+            // Following a link remembers where you came from, so Back returns to that note (like Obsidian).
+            linkTrail.add(open.id)
             val target = notes.firstOrNull { it.trashed == 0L && it.displayTitle.equals(t, true) }
             if (target != null) openId = target.id else newNote(title = t)
         }, onChange = ::upsert, onClose = {
             if (open.external.isEmpty() && open.title.isBlank() && open.body.isBlank()) { notes.remove(open); scope.launch(Dispatchers.IO) { store.deleteForever(open) } }
-            openId = null
+            openId = linkTrail.removeLastOrNull()?.takeIf { id -> notes.any { it.id == id } || externals.any { it.id == id } }
         }, onDelete = {
             if (open.external.isNotEmpty()) { toast.value("This file lives in ${java.io.File(open.external).parentFile?.name}. Delete it in Wayfinder."); openId = null }
             else { upsert(open.copy(trashed = System.currentTimeMillis())); openId = null }
@@ -268,6 +272,9 @@ fun ScribbleApp() {
             }
             Panel(title = "Editor") {
                 var pv by remember { mutableStateOf(store.prefs.getBoolean("openInPreview", false)) }
+                var lp by remember { mutableStateOf(store.prefs.getBoolean("livePreview", true)) }
+                SwitchRow("Live formatting", lp, { lp = it; store.prefs.edit().putBoolean("livePreview", it).apply() }, subtitle = "Headings, bold, links and tags look formatted while you type, like Obsidian", help = "The Markdown marks stay in your text, faintly, so files open the same in Obsidian.")
+                PanelDivider()
                 SwitchRow("Open notes in preview", pv, { pv = it; store.prefs.edit().putBoolean("openInPreview", it).apply() }, subtitle = "Show formatted Markdown first; tap Edit to change it", help = "Opens notes as formatted text first; tap to edit.")
             }
             Panel(title = "Text") {
@@ -292,7 +299,7 @@ fun ScribbleApp() {
                 PanelDivider()
                 var st by remember { mutableStateOf(sp.getBoolean("showStats", true)) }
                 var eb by remember { mutableStateOf(sp.getBoolean("editorBar", true)) }
-                SwitchRow("Cursor and selection buttons", eb, { eb = it; sp.edit().putBoolean("editorBar", it).apply() }, subtitle = "A row above the keyboard to move by letter, word or line, select, copy and paste")
+                SwitchRow("Keyboard bar", eb, { eb = it; sp.edit().putBoolean("editorBar", it).apply() }, subtitle = "A row above the keyboard for formatting (bold, headings, links, tasks), and Cursor ▸ for moving, selecting, copying and pasting")
                 PanelDivider()
                 SwitchRow("Show word count bar", st, { st = it; sp.edit().putBoolean("showStats", it).apply() })
             }
@@ -354,6 +361,23 @@ fun ScribbleApp() {
                     }
                     androidx.compose.material3.Icon(WonderIcons.ExpandMore, null, tint = p.secondaryText)
                 }
+                // Still on the private folder? Offer the Obsidian vault on this phone by name, one tap to open it.
+                if (!store.usesSharedFolder && !context.prefs("scribble").getBoolean("vaultHintHidden", false)) {
+                    var vaultHint by remember { mutableStateOf<java.io.File?>(null) }
+                    var hidden by remember { mutableStateOf(false) }
+                    LaunchedEffect(Unit) { if (Documents.canEditAll()) vaultHint = withContext(Dispatchers.IO) { store.findObsidianVaults().firstOrNull() } }
+                    if (!hidden) Row(Modifier.fillMaxWidth().clip(RoundedCornerShape(12.dp)).background(Color(0xFF7C4DFF).copy(alpha = .14f)).padding(start = 12.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                        androidx.compose.material3.Icon(WonderIcons.Hub, null, tint = Color(0xFF7C4DFF))
+                        Column(Modifier.padding(start = 10.dp).weight(1f).clickable {
+                            val v = vaultHint
+                            if (v != null) reloadFrom(null, vault = Vault(v.name, "", v.path)) else vaultSheet = true
+                        }.padding(vertical = 6.dp)) {
+                            Text(vaultHint?.let { "Open “${it.name}”" } ?: "Use your Obsidian vault", style = MaterialTheme.typography.titleSmall, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                            Text(vaultHint?.let { "Your Obsidian vault, found on this phone. Edits go straight into its files" } ?: "Open its folder and Scribble works on the same files", style = MaterialTheme.typography.bodySmall, color = p.secondaryText, maxLines = 2)
+                        }
+                        TextButton(onClick = { hidden = true; context.prefs("scribble").edit().putBoolean("vaultHintHidden", true).apply() }) { Text("Hide") }
+                    }
+                }
                 Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("All notes", filter == "all", { filter = "all" }, WonderIcons.Notes)
                     Chip("Pinned", filter == "pinned", { filter = "pinned" }, WonderIcons.PushPin)
@@ -391,7 +415,7 @@ fun ScribbleApp() {
                     val depth = path.count { it == '/' }
                     val open = path in expanded
                     item(key = "f:$path") {
-                        ListRow(path.substringAfterLast('/'), Modifier.padding(start = (depth * 18).dp), subtitle = "${all.count { it.folder == path || it.folder.startsWith("$path/") }} notes",
+                        ListRow(path.substringAfterLast('/'), Modifier.padding(start = (depth * 18).dp), subtitle = all.count { it.folder == path || it.folder.startsWith("$path/") }.let { n -> "$n note${if (n == 1) "" else "s"}" },
                             icon = if (open) WonderIcons.FolderOpen else WonderIcons.Folder, tint = Color(0xFF4A90E2),
                             trailing = { Row(verticalAlignment = Alignment.CenterVertically) {
                                 androidx.compose.material3.IconButton(onClick = { val n = Note(folder = path); upsert(n); openId = n.id }) { Icon(WonderIcons.NoteAdd, "New note in ${path.substringAfterLast('/')}", tint = p.accent) }
@@ -529,6 +553,8 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
     var anchor by remember(note.id) { mutableIntStateOf(0) }
     var bodyFocused by remember { mutableStateOf(false) }
     var insertOpen by remember { mutableStateOf(false) }
+    var cursorKeys by rememberSaveable { mutableStateOf(false) }
+    val linkTitles = remember(allNotes.size) { allNotes.filter { it.trashed == 0L && it.id != note.id && !it.sketch }.sortedByDescending { it.updated }.map { it.displayTitle } }
     val insertScope = rememberCoroutineScope()
     val bodyScroll = rememberScrollState()
     val bring = remember { androidx.compose.foundation.relocation.BringIntoViewRequester() }
@@ -635,14 +661,9 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                 val showRules = sp.getBoolean("rules", true)
                 val mono = sp.getBoolean("monoEditor", false)
                 val ruled = p.text.copy(alpha = if (p.dark) .08f else .07f)
+                val live = remember(p, fontPx, sp.getBoolean("livePreview", true)) { if (sp.getBoolean("livePreview", true)) LiveMarkdown(p, fontPx) else androidx.compose.ui.text.input.VisualTransformation.None }
                 if (preview) {
                     MarkdownView(body.text, onToggle = { line -> setBody(TextFieldValue(toggleLine(body.text, line))) }, onLink = onOpenLink, onReplace = { setBody(TextFieldValue(it)) })
-                    val me = (title.ifBlank { current.displayTitle }).lowercase()
-                    val back = allNotes.filter { it.id != current.id && it.trashed == 0L && me in it.links }
-                    if (back.isNotEmpty()) {
-                        Spacer(Modifier.height(24.dp)); SectionLabel("Linked from ${back.size} note${if (back.size == 1) "" else "s"}")
-                        back.forEach { b -> Text("↩ " + b.displayTitle, Modifier.clickable { onOpenLink(b.displayTitle) }.padding(vertical = 6.dp), color = p.accent, style = MaterialTheme.typography.bodyLarge) }
-                    }
                 } else {
                     val segs = remember(body.text) { splitSegments(body.text) }
                     val onBody: (TextFieldValue) -> Unit = { v ->
@@ -651,10 +672,16 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                         if (cont != null) setBody(TextFieldValue(cont.first, TextRange(cont.second))) else if (table != null) setBody(table) else setBody(v)
                     }
                     if (segs.none { it.table }) BasicTextField(body, onBody, Modifier.fillMaxWidth().defaultMinSize(minHeight = 400.dp).bringIntoViewRequester(bring).onFocusChanged { bodyFocused = it.isFocused }.drawBehind {
+                    // A rule under each real line of text (headings are taller), then evenly spaced below the last one.
                     val step = lineHeight.toPx()
+                    val lay = bodyLayout
                     var y = step - 2
+                    if (showRules && lay != null && lay.lineCount > 0) {
+                        for (i in 0 until lay.lineCount) { val b = lay.getLineBottom(i) - 2; drawLine(ruled, Offset(0f, b), Offset(size.width, b), 1.5f) }
+                        y = lay.getLineBottom(lay.lineCount - 1) - 2 + step
+                    }
                     if (showRules) while (y < size.height) { drawLine(ruled, Offset(0f, y), Offset(size.width, y), 1.5f); y += step }
-                }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent), onTextLayout = { bodyLayout = it },
+                }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent), onTextLayout = { bodyLayout = it }, visualTransformation = live,
                     keyboardOptions = KeyboardOptions(capitalization = if (sp.getBoolean("caps", true)) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, autoCorrect = sp.getBoolean("autoCorrect", true)),
                     decorationBox = { inner -> if (body.text.isEmpty()) Text("Start writing…", style = MaterialTheme.typography.bodyLarge, color = p.secondaryText.copy(alpha = .6f)); inner() })
                     else Column(Modifier.fillMaxWidth()) {
@@ -673,7 +700,7 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                                         val step = lineHeight.toPx()
                                         var y = step - 2
                                         if (showRules) while (y < size.height) { drawLine(ruled, Offset(0f, y), Offset(size.width, y), 1.5f); y += step }
-                                    }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent), onTextLayout = { bodyLayout = it },
+                                    }, textStyle = MaterialTheme.typography.bodyLarge.copy(color = p.text, lineHeight = lineHeight, fontSize = fontPx.sp, fontFamily = if (mono) androidx.compose.ui.text.font.FontFamily.Monospace else MaterialTheme.typography.bodyLarge.fontFamily), cursorBrush = SolidColor(p.accent), onTextLayout = { bodyLayout = it }, visualTransformation = live,
                     keyboardOptions = KeyboardOptions(capitalization = if (sp.getBoolean("caps", true)) KeyboardCapitalization.Sentences else KeyboardCapitalization.None, autoCorrect = sp.getBoolean("autoCorrect", true)),
                     decorationBox = { inner -> if (false) Text("", style = MaterialTheme.typography.bodyLarge, color = p.secondaryText.copy(alpha = .6f)); inner() })
 
@@ -681,8 +708,21 @@ private fun NoteEditor(note: Note, folders: List<String>, allNotes: List<Note>, 
                         }
                     }
                 }
+                // Backlinks, like Obsidian: every note that links here, while you edit as well as in preview.
+                val me = (title.ifBlank { current.displayTitle }).lowercase()
+                val back = remember(allNotes, me) { allNotes.filter { it.id != current.id && it.trashed == 0L && me in it.links } }
+                if (back.isNotEmpty()) {
+                    Spacer(Modifier.height(24.dp)); SectionLabel("Linked from ${back.size} note${if (back.size == 1) "" else "s"}")
+                    back.forEach { b -> Text("↩ " + b.displayTitle, Modifier.clickable { onOpenLink(b.displayTitle) }.padding(vertical = 6.dp), color = p.accent, style = MaterialTheme.typography.bodyLarge) }
+                }
             }
-            if (bodyFocused && !preview && sp0.getBoolean("editorBar", true)) EditorBar(body, selecting, { selecting = it }, { setBody(it, snapshot = false) }, { pasteHere() }, { copySelection(it) }, anchor, { anchor = it })
+            if (bodyFocused && !preview) LinkSuggestions(body, linkTitles, onChange = { setBody(it) }, onOpen = onOpenLink)
+            if (bodyFocused && !preview && sp0.getBoolean("editorBar", true)) {
+                if (cursorKeys) Row(verticalAlignment = Alignment.CenterVertically) {
+                    Box(Modifier.weight(1f)) { EditorBar(body, selecting, { selecting = it }, { setBody(it, snapshot = false) }, { pasteHere() }, { copySelection(it) }, anchor, { anchor = it }) }
+                    TextButton(onClick = { cursorKeys = false }) { Text("Format") }
+                } else FormatBar(body, onChange = { setBody(it) }, onMore = { cursorKeys = true })
+            }
             if (context.prefs("scribble").getBoolean("showStats", true)) Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .7f)).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                 val words = current.copy(title = title, body = body.text).words
                 Text("$words word${if (words == 1) "" else "s"} · ${body.text.length} characters · ${(words / 220).coerceAtLeast(if (words > 0) 1 else 0)} min read",

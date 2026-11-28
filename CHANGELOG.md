@@ -1,5 +1,16 @@
 # Scribble changelog
 
+## v0.10.0
+
+- Live formatting while you write, like Obsidian: headings are big and bold, **bold**, *italic*, ==highlight==, `code`, ~~struck~~ text, [[links]], #tags, quotes and ticked tasks all look the way they will read. The Markdown marks stay in the text, just faint, so your files open the same in Obsidian. Turn it off in Settings › Editor
+- A formatting bar above the keyboard: link, heading (tap again for smaller, then off), bold, italic, task, bullet and numbered lists, tag, quote, strikethrough, highlight and code. "Cursor ▸" switches to the old cursor and selection keys
+- Type [[ and Scribble suggests your notes as you go; tap one to finish the link, or "+ New note" for a note that doesn't exist yet. With the cursor on a link, an "Open" button takes you to that note
+- Following a link remembers where you were: Back returns to the note you came from instead of the list
+- Backlinks ("Linked from") now show at the bottom of a note while you edit it, not only in preview
+- If you are still using Scribble's private folder and you have an Obsidian vault on the phone, the home screen offers it by name: one tap opens it, with its folders as a tree
+- The ruled lines sit under each line of text again, even with headings
+- A folder with one note says "1 note", not "1 notes"
+
 ## v0.9.2
 
 - The moving background holds still while Battery Saver is on, so it uses next to no power then. It still changes with what the app is doing
