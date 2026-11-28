@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.9.2
+
+- The moving background holds still while Battery Saver is on, so it uses next to no power then. It still changes with what the app is doing
+
 ## v0.9.1
 
 - While you write, the note's paper is a little see-through, so the background shows faintly and the letters you type float up where you can see them (they used to start behind the keyboard)
