@@ -1,5 +1,6 @@
 package dev.wonderdesk.scribble
 
+import dev.wonderdesk.shared.scrollRow
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -149,7 +150,7 @@ fun FormatBar(value: TextFieldValue, onChange: (TextFieldValue) -> Unit, onMore:
             Text(label, color = p.text, fontSize = 15.sp, fontWeight = style?.fontWeight ?: FontWeight.SemiBold, fontStyle = style?.fontStyle, textDecoration = style?.textDecoration, fontFamily = style?.fontFamily, maxLines = 1)
         }
     }
-    Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .9f)).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .9f)).scrollRow().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         key("[[ ]]", "Link to a note") { onChange(wrapSelection(value, "[[", "]]")) }
         key("H", "Heading") { onChange(cycleHeading(value)) }
         key("B", "Bold", SpanStyle(fontWeight = FontWeight.Black)) { onChange(wrapSelection(value, "**")) }
@@ -201,7 +202,7 @@ fun LinkSuggestions(value: TextFieldValue, titles: List<String>, onChange: (Text
             Text(label, color = if (strong) Color.White else p.text, fontSize = 14.sp, fontWeight = FontWeight.Medium, maxLines = 1)
         }
     }
-    Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .95f)).horizontalScroll(rememberScrollState()).padding(horizontal = 6.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .95f)).scrollRow().padding(horizontal = 6.dp, vertical = 5.dp), verticalAlignment = Alignment.CenterVertically) {
         if (inside != null) {
             chip("Open “$inside”", strong = true) { onOpen(inside) }
             return@Row

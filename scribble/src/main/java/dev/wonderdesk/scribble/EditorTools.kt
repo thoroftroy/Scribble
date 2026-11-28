@@ -1,5 +1,6 @@
 package dev.wonderdesk.scribble
 
+import dev.wonderdesk.shared.scrollRow
 import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.background
@@ -163,7 +164,7 @@ fun EditorBar(value: TextFieldValue, selecting: Boolean, onSelecting: (Boolean) 
             Text(label, color = if (strong) androidx.compose.ui.graphics.Color.White else if (enabled) p.text else p.secondaryText.copy(alpha = .5f), fontSize = 14.sp, fontWeight = FontWeight.SemiBold, maxLines = 1)
         }
     }
-    Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .9f)).horizontalScroll(rememberScrollState()).padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+    Row(Modifier.fillMaxWidth().background(p.panel.copy(alpha = .9f)).scrollRow().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
         key(if (selecting) "Selecting" else "Select", strong = selecting) { onSelecting(!selecting); if (!selecting) onAnchor(value.selection.start) }
         key("⇤") { go(lineStart(t, active)) }
         key("◂◂") { go(wordLeft(t, active)) }
@@ -232,9 +233,9 @@ fun InsertDialog(onDismiss: () -> Unit, onInsert: (String, Int?) -> Unit, onPick
     dev.wonderdesk.shared.WonderDialog(onDismissRequest = onDismiss, title = { androidx.compose.material3.Text(if (tablePicker) "Table size" else "Insert") }, text = {
         if (tablePicker) androidx.compose.foundation.layout.Column(verticalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(10.dp)) {
             androidx.compose.material3.Text("Rows (the first is the heading)", style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) { (2..10).forEach { n -> dev.wonderdesk.shared.Chip("$n", rows == n, { rows = n }) } }
+            Row(Modifier.scrollRow(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) { (2..10).forEach { n -> dev.wonderdesk.shared.Chip("$n", rows == n, { rows = n }) } }
             androidx.compose.material3.Text("Columns", style = androidx.compose.material3.MaterialTheme.typography.labelLarge)
-            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) { (2..6).forEach { n -> dev.wonderdesk.shared.Chip("$n", cols == n, { cols = n }) } }
+            Row(Modifier.scrollRow(), horizontalArrangement = androidx.compose.foundation.layout.Arrangement.spacedBy(6.dp)) { (2..6).forEach { n -> dev.wonderdesk.shared.Chip("$n", cols == n, { cols = n }) } }
         } else androidx.compose.foundation.layout.Column(Modifier.androidx_vscroll()) {
             dev.wonderdesk.shared.Panel {
                 items.forEachIndexed { i, (label, hint, ins) ->

@@ -115,7 +115,7 @@ fun TableEditor(markdown: String, onChange: (String) -> Unit) {
     var colMenu by remember { mutableStateOf<Int?>(null) }
     var rowMenu by remember { mutableStateOf<Int?>(null) }
     Column(Modifier.fillMaxWidth().padding(vertical = 8.dp).clip(RoundedCornerShape(10.dp)).border(1.dp, p.panelBorder, RoundedCornerShape(10.dp))) {
-        Row(Modifier.horizontalScroll(rememberScrollState())) {
+        Row(Modifier.scrollRow()) {
             Column {
                 grid.rows.forEachIndexed { r, row ->
                     var drag by remember(markdown, r) { mutableStateOf(0f) }

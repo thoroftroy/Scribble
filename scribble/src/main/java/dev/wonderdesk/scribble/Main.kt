@@ -313,7 +313,7 @@ fun ScribbleApp() {
                 PanelDivider()
                 var cl by remember { mutableIntStateOf(sp.getInt("cardLines", 8)) }
                 Column(Modifier.padding(16.dp, 10.dp)) { Text("Lines shown on each note card", style = MaterialTheme.typography.labelLarge)
-                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(2, 4, 8, 14).forEach { v -> Chip("$v", cl == v, { cl = v; sp.edit().putInt("cardLines", v).apply() }) } } }
+                    Row(Modifier.scrollRow(), horizontalArrangement = Arrangement.spacedBy(8.dp)) { listOf(2, 4, 8, 14).forEach { v -> Chip("$v", cl == v, { cl = v; sp.edit().putInt("cardLines", v).apply() }) } } }
                 PanelDivider()
                 var sd by remember { mutableIntStateOf(sp.getInt("saveDelay", 350)) }
                 Column(Modifier.padding(16.dp, 10.dp)) { Text("Save ${sd / 1000f} s after you stop typing", style = MaterialTheme.typography.labelLarge); Slider(sd.toFloat(), { sd = it.toInt() }, valueRange = 100f..3000f, onValueChangeFinished = { sp.edit().putInt("saveDelay", sd).apply() }) }
@@ -378,7 +378,7 @@ fun ScribbleApp() {
                         TextButton(onClick = { hidden = true; context.prefs("scribble").edit().putBoolean("vaultHintHidden", true).apply() }) { Text("Hide") }
                     }
                 }
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Row(Modifier.scrollRow(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     Chip("All notes", filter == "all", { filter = "all" }, WonderIcons.Notes)
                     Chip("Pinned", filter == "pinned", { filter = "pinned" }, WonderIcons.PushPin)
                     Chip("On this phone", filter == "device", { filter = "device" }, WonderIcons.PhoneAndroid)
@@ -965,7 +965,7 @@ private fun MarkdownTable(rows: List<String>, p: WonderPalette, onLink: (String)
     var sortCol by remember(rows) { mutableIntStateOf(-1) }
     var asc by remember(rows) { mutableStateOf(true) }
     val shape = androidx.compose.foundation.shape.RoundedCornerShape(p.panelRadius)
-    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(shape).border(1.dp, p.panelBorder, shape).horizontalScroll(rememberScrollState())) {
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp).clip(shape).border(1.dp, p.panelBorder, shape).scrollRow()) {
         val cols = maxOf(header.size, body.maxOfOrNull { cells(it).size } ?: 0)
         Row(Modifier.background(p.accent.copy(alpha = .12f))) {
             (0 until cols).forEach { c ->

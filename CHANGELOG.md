@@ -1,5 +1,9 @@
 # Scribble changelog
 
+## v0.10.1
+
+- Rows that scroll sideways (chips, filters, tabs) now fade at the edge where there is more, show a small arrow you can tap, and nudge once when first shown, so it is clear there is more to scroll to
+
 ## v0.10.0
 
 - Live formatting while you write, like Obsidian: headings are big and bold, **bold**, *italic*, ==highlight==, `code`, ~~struck~~ text, [[links]], #tags, quotes and ticked tasks all look the way they will read. The Markdown marks stay in the text, just faint, so your files open the same in Obsidian. Turn it off in Settings › Editor
